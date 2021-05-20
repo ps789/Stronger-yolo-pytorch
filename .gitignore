@@ -8,3 +8,9 @@ weights/
 *.txt
 transfer.py
 local.py
+*.p
+*.csv
+*.tar
+dataset/VOCdevkit/
+VOCdevkit
+dataset/coco

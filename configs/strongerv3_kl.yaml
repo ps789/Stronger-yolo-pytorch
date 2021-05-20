@@ -28,16 +28,14 @@ MODEL:
   boxloss: KL
   l1scale: 0.1
   clsfocal: True
-EVAL:
-  varvote: True
 EXPER:
   experiment_name: 'strongerv3_kl'
 DATASET:
   dataset: 'VOC'
 
 OPTIM:
-  batch_size: 12
-  lr_initial: 2e-4
+  batch_size: 5
+  lr_initial: 2e-6
   total_epoch: 60
   milestones: [30,45]
 

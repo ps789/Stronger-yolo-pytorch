@@ -10,7 +10,7 @@ def main(args):
     gpus=[str(g) for g in args.devices]
     os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(gpus)
     net = eval(cfg.MODEL.modeltype)(cfg=args.MODEL).cuda()
-    optimizer = optim.Adam(net.parameters(),lr=args.OPTIM.lr_initial)
+    optimizer = optim.Adam(filter(lambda p: p.requires_grad, net.parameters()),lr=args.OPTIM.lr_initial)
     scheduler=optim.lr_scheduler.MultiStepLR(optimizer, milestones=args.OPTIM.milestones, gamma=0.1)
     _Trainer = eval('Trainer_{}'.format(args.DATASET.dataset))(args=args,
                        model=net,

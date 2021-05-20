@@ -2,7 +2,7 @@ from models.backbone import *
 from models.backbone.helper import *
 from models.backbone.baseblock import *
 
-class StrongerV3(nn.Module):
+class StrongerV3Quantile_Adjusted(nn.Module):
     def __init__(self,cfg):
         super().__init__()
         self.cfg=cfg
@@ -17,7 +17,7 @@ class StrongerV3(nn.Module):
             ('conv1', sepconv_bn(512, 1024, kernel=3, stride=1, padding=1,seprelu=cfg.seprelu)),
             ('conv2', conv_bn(1024, 512, kernel=1,stride=1,padding=0)),
             ('conv3', sepconv_bn(512, 1024, kernel=3, stride=1, padding=1,seprelu=cfg.seprelu)),
-            ('conv4', conv_bn(1024, 512, kernel=1,stride=1,padding=0)),
+            ('conv4', conv_bn(1024, 512, kernel=1,stride=1,padding=0)   ),
         ]))
         self.detlarge=nn.Sequential(OrderedDict([
             ('conv5',sepconv_bn(512,1024,kernel=3, stride=1, padding=1,seprelu=cfg.seprelu)),
@@ -59,8 +59,40 @@ class StrongerV3(nn.Module):
             self.asff0 = ASFF(0, activate=self.activate_type)
             self.asff1 = ASFF(1, activate=self.activate_type)
             self.asff2 = ASFF(2, activate=self.activate_type)
-    def get_info(self):
-        return self.backbone,self.headslarge, self.detlarge, self.mergelarge, self.headsmid, self.detmid, self.mergemid, self.headsmall, self.detsmall
+        self.detlarge_quantile=nn.Sequential(OrderedDict([
+            ('conv5',sepconv_bn(516,1024,kernel=3, stride=1, padding=1,seprelu=cfg.seprelu)),
+            ('conv6', conv_bias(1024, self.gt_per_grid*(self.numclass+5),kernel=1,stride=1,padding=0))
+        ]))
+        self.detmid_quantile=nn.Sequential(OrderedDict([
+            ('conv13',sepconv_bn(260,512,kernel=3, stride=1, padding=1,seprelu=cfg.seprelu)),
+            ('conv14', conv_bias(512, self.gt_per_grid*(self.numclass+5),kernel=1,stride=1,padding=0))
+        ]))
+        self.detsmall_quantile=nn.Sequential(OrderedDict([
+            ('conv21',sepconv_bn(132,256,kernel=3, stride=1, padding=1,seprelu=cfg.seprelu)),
+            ('conv22', conv_bias(256, self.gt_per_grid*(self.numclass+5),kernel=1,stride=1,padding=0))
+        ]))
+        for field in [self.backbone,self.headslarge, self.detlarge, self.mergelarge, self.headsmid, self.detmid, self.mergemid, self.headsmall, self.detsmall]:
+            for param in field.parameters():
+                param.requires_grad = False
+    def load_partial_state(self,backbone,headslarge, detlarge, mergelarge, headsmid, detmid, mergemid, headsmall, detsmall):
+        self.backbone.load_state_dict(backbone)
+        self.headslarge= load_state_dict(headslarge)
+        self.detlarge= load_state_dict(detlarge)
+        self.mergelarge= load_state_dict(mergelarge)
+        #-----------------------------------------------
+        self.headsmid= load_state_dict(headsmid)
+        self.detmid= load_state_dict(detmid)
+        self.mergemid= load_state_dict(mergemid)
+        #-----------------------------------------------
+        self.headsmall= load_state_dict(headsmall)
+        self.detsmall= load_state_dict(detsmall)
+        for field in [self.backbone,self.headslarge, self.detlarge, self.mergelarge, self.headsmid, self.detmid, self.mergemid, self.headsmall, self.detsmall]:
+            for param in field.parameters():
+                param.requires_grad = False
+    def unfreeze(self):
+        for field in [self.backbone,self.headslarge, self.detlarge, self.mergelarge, self.headsmid, self.detmid, self.mergemid, self.headsmall, self.detsmall]:
+            for param in field.parameters():
+                param.requires_grad = True
 
     def decode(self,output,stride):
         bz=output.shape[0]
@@ -69,7 +101,6 @@ class StrongerV3(nn.Module):
         output=output.permute(0,2,3,1)
         output=output.view(bz,gridsize,gridsize,self.gt_per_grid,5+self.numclass)
         x1y1,x2y2,conf,prob=torch.split(output,[2,2,1,self.numclass],dim=4)
-        #print(x1y1.size())
         shiftx=torch.arange(0,gridsize,dtype=torch.float32)
         shifty=torch.arange(0,gridsize,dtype=torch.float32)
         shifty,shiftx=torch.meshgrid([shiftx,shifty])
@@ -84,7 +115,6 @@ class StrongerV3(nn.Module):
         conf=torch.sigmoid(conf)
         prob=torch.sigmoid(prob)
         output=torch.cat((xyxy,conf,prob),4)
-        #print(output.size())
         return output
     def decode_infer(self,output,stride):
         bz=output.shape[0]
@@ -108,10 +138,12 @@ class StrongerV3(nn.Module):
         conf=torch.sigmoid(conf)
         prob=torch.sigmoid(prob)
         output=torch.cat((xyxy,conf,prob),4)
+        #print(output.shape)
         output=output.view(bz,-1,5+self.numclass)
+        #print(output.shape)
         return output
 
-    def forward(self,input):
+    def forward(self,input, input_alpha):
         feat_small, feat_mid, feat_large = self.backbone(input)
         conv = self.headslarge(feat_large)
         convlarge=conv
@@ -128,22 +160,70 @@ class StrongerV3(nn.Module):
             convlarge=self.asff0(convlarge,convmid,convsmall)
             convmid=self.asff1(convlarge,convmid,convsmall)
             convsmall=self.asff2(convlarge,convmid,convsmall)
-        outlarge = self.detlarge(convlarge)
-        outmid = self.detmid(convmid)
-        outsmall = self.detsmall(convsmall)
+        alpha = input_alpha.repeat(convlarge.size()[2], convlarge.size()[3], 1, 1).permute(2, 3, 0, 1).to(device = 'cuda')
+        combined = torch.cat((convlarge, alpha), 1)
+        outlarge = self.detlarge_quantile(combined)
+        outlarge_orig = self.detlarge(convlarge)
+        alpha = input_alpha.repeat(convmid.size()[2], convmid.size()[3], 1, 1).permute(2, 3, 0, 1).to(device = 'cuda')
+        combined = torch.cat((convmid, alpha), 1)
+        outmid_orig = self.detmid(convmid)
+        outmid = self.detmid_quantile(combined)
+        alpha = input_alpha.repeat(convsmall.size()[2], convsmall.size()[3], 1, 1).permute(2, 3, 0, 1).to(device = 'cuda')
+        combined = torch.cat((convsmall, alpha), 1)
+        outsmall = self.detsmall_quantile(combined)
+        outsmall_orig = self.detsmall(convsmall)
         if self.training:
             predlarge = self.decode(outlarge, 32)
             predmid=self.decode(outmid,16)
             predsmall=self.decode(outsmall,8)
+            predlarge_orig = self.decode(outlarge_orig, 32)
+            predmid_orig=self.decode(outmid_orig,16)
+            predsmall_orig=self.decode(outsmall_orig,8)
         else:
             predlarge = self.decode_infer(outlarge, 32)
             predmid = self.decode_infer(outmid, 16)
             predsmall = self.decode_infer(outsmall, 8)
+            # predlarge_orig = self.decode_infer(outlarge_orig, 32)
+            # predmid_orig = self.decode_infer(outmid_orig, 16)
+            # predsmall_orig = self.decode_infer(outsmall_orig, 8)
             pred=torch.cat([predsmall,predmid,predlarge],dim=1)
+            #pred_orig = torch.cat([predsmall_orig,predmid_orig,predlarge_orig],dim=1)
             return pred
-        return outsmall,outmid,outlarge,predsmall,predmid,predlarge
-    def export():
-        return self.headslarge, self.detlarge, self.mergelarge,self.headsmid, self.detmid, self.mergemid,self.headsmall, self.detsmall
+        return outsmall,outmid,outlarge,predsmall,predmid,predlarge,outsmall_orig, outmid_orig,outlarge_orig, predsmall_orig,predmid_orig,predlarge_orig
+    def partial_forward(self, input):
+        feat_small, feat_mid, feat_large = self.backbone(input)
+        conv = self.headslarge(feat_large)
+        convlarge=conv
+
+        conv = self.mergelarge(convlarge)
+        conv = self.headsmid(torch.cat((conv, feat_mid), dim=1))
+        convmid=conv
+
+        conv = self.mergemid(convmid)
+
+        conv = self.headsmall(torch.cat((conv, feat_small), dim=1))
+        convsmall=conv
+        if self.cfg.ASFF:
+            convlarge=self.asff0(convlarge,convmid,convsmall)
+            convmid=self.asff1(convlarge,convmid,convsmall)
+            convsmall=self.asff2(convlarge,convmid,convsmall)
+        return convlarge, convmid, convsmall
+    def partial_forward_2(self, convlarge, convmid, convsmall, input_alpha):
+        alpha = input_alpha.repeat(convlarge.size()[2], convlarge.size()[3], 1, 1).permute(2, 3, 0, 1).to(device = 'cuda')
+        combined = torch.cat((convlarge, alpha), 1)
+        outlarge = self.detlarge_quantile(combined)
+        alpha = input_alpha.repeat(convmid.size()[2], convmid.size()[3], 1, 1).permute(2, 3, 0, 1).to(device = 'cuda')
+        combined = torch.cat((convmid, alpha), 1)
+        outmid = self.detmid_quantile(combined)
+        alpha = input_alpha.repeat(convsmall.size()[2], convsmall.size()[3], 1, 1).permute(2, 3, 0, 1).to(device = 'cuda')
+        combined = torch.cat((convsmall, alpha), 1)
+        outsmall = self.detsmall_quantile(combined)
+        predlarge = self.decode_infer(outlarge, 32)
+        predmid = self.decode_infer(outmid, 16)
+        predsmall = self.decode_infer(outsmall, 8)
+        pred=torch.cat([predsmall,predmid,predlarge],dim=1)
+        return pred
+
 
 if __name__ == '__main__':
     import torch.onnx

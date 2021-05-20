@@ -3,7 +3,7 @@ from dataset import get_COCO, get_VOC
 import os
 import time
 from dataset import makeImgPyramids
-from models.yololoss import yololoss, yololoss_cdf, yololoss_quantile_adjusted
+from models.yololoss import yololoss, yololoss_quantile, yololoss_quantile_adjusted
 from utils.nms_sampling import torch_nms_sampling
 from utils.nms_utils import torch_nms
 from tensorboardX import SummaryWriter
@@ -21,11 +21,7 @@ import torchvision
 from yacscfg import _C as cfg
 from yacscfg2 import _C as cfg2
 from models.strongerv3 import StrongerV3
-from models.strongerv3kl import StrongerV3KL
-from torch import optim
 import einops
-import math
-import numpy as np
 class BaseTrainer:
     """
     Base class for all trainers
@@ -86,59 +82,43 @@ class BaseTrainer:
             state_dict=ckptfile['state_dict']
             new_state_dict= {}
             for k, v in state_dict.items():
-                name = k
+                #name=k #remove 'module.' of DataParallel
+                name = "module."+k
                 new_state_dict[name]=v
             self.model.load_state_dict(new_state_dict)
+            #load_checkpoint(self.model,ckptfile)
             if not self.args.finetune and not self.args.do_test and not self.args.Prune.do_test:
+                self.optimizer.load_state_dict(ckptfile['opti_dict'])
                 self.global_epoch = ckptfile['epoch']
                 self.global_iter = ckptfile['iter']
                 self.best_mAP = ckptfile['metric']
         print("successfully load checkpoint {}".format(self.args.EXPER.resume))
     def _load_ckpt_quantile_adjusted(self, name):
-        cfg2.merge_from_file("configs/strongerv3_kl.yaml")
+        cfg2.merge_from_file("configs/strongerv3_asff.yaml")
         net = eval(cfg2.MODEL.modeltype)(cfg=cfg2.MODEL).cuda()
         if self.args.EXPER.resume == "load_voc":
             load_tf_weights(self.model, 'vocweights.pkl')
         else:  # iter or best
-            ckptfile = torch.load(os.path.join('./checkpoints/strongerv3_kl/', 'checkpoint-{}.pth'.format(name)))
+            ckptfile = torch.load(os.path.join('./checkpoints/strongerv3_asff/', 'checkpoint-{}.pth'.format(name)))
             state_dict=ckptfile['state_dict']
             new_state_dict= {}
             for k, v in state_dict.items():
-                #name=k #remove 'module.' of DataParallel
-                name = k
+                name=k #remove 'module.' of DataParallel
+                #name = "module."+k
                 new_state_dict[name]=v
             net.load_state_dict(new_state_dict)
             backbone,headslarge, detlarge, mergelarge, headsmid, detmid, mergemid, headsmall, detsmall = net.get_info()
-            self.model.module.load_partial_state(backbone,headslarge, detlarge, mergelarge, headsmid, detmid, mergemid, headsmall, detsmall)
-            self.optimizer.zero_grad()
+            self.model.load_partial_state(backbone,headslarge, detlarge, mergelarge, headsmid, detmid, mergemid, headsmall, detsmall)
 
-    def _load_ckpt_cdf(self, name):
-        cfg2.merge_from_file("configs/strongerv3_kl.yaml")
-        net = eval(cfg2.MODEL.modeltype)(cfg=cfg2.MODEL).cuda()
-        if self.args.EXPER.resume == "load_voc":
-            load_tf_weights(self.model, 'vocweights.pkl')
-        else:  # iter or best
-            ckptfile = torch.load(os.path.join('./checkpoints/strongerv3_kl/', 'checkpoint-{}.pth'.format(name)))
-            state_dict=ckptfile['state_dict']
-            new_state_dict= {}
-            for k, v in state_dict.items():
-                #name=k #remove 'module.' of DataParallel
-                name = k
-                new_state_dict[name]=v
-            net.load_state_dict(new_state_dict)
-            backbone,headslarge, detlarge, mergelarge, headsmid, detmid, mergemid, headsmall, detsmall = net.get_info()
-            self.model.module.load_partial_state(backbone,headslarge, mergelarge, headsmid, mergemid, headsmall)
-            self.optimizer.zero_grad()
+
     def _get_model(self):
         self.save_path = './checkpoints/{}/'.format(self.experiment_name)
         ensure_dir(self.save_path)
         self._prepare_device()
         if self.args.EXPER.resume:
             self._load_ckpt()
-        elif self.args.EXPER.experiment_name == 'strongerv3_quantile_adjusted':
-            self._load_ckpt_quantile_adjusted("best")
-        elif self.args.EXPER.experiment_name == 'strongerv3_cdf':
-            self._load_ckpt_cdf("best")
+        # if self.args.EXPER.experiment_name == 'strongerv3_quantile_adjusted':
+        #     self._load_ckpt_quantile_adjusted("best")
 
     def _prepare_device(self):
         if len(self.args.devices)>1:
@@ -188,25 +168,27 @@ class BaseTrainer:
         for epoch in range(self.global_epoch, self.args.OPTIM.total_epoch):
             print("Epoch "+ str(self.global_epoch))
             self.global_epoch += 1
-
             self._train_epoch()
             self.lr_scheduler.step(epoch)
             lr_current = self.optimizer.param_groups[0]['lr']
             self.writer.add_scalar("learning_rate", lr_current, epoch)
             for k, v in self.logger_losses.items():
                 self.writer.add_scalar(k, v.get_avg(), global_step=self.global_iter)
+            if epoch > 2:
+                results, imgs = self._valid_epoch()
+                for k, v in zip(self.logger_custom, results):
+                    self.writer.add_scalar(k, v, global_step=self.global_epoch)
+                for i in range(len(imgs)):
+                    self.writer.add_image("detections_{}".format(i), imgs[i].transpose(2, 0, 1),
+                                          global_step=self.global_epoch)
+                self._reset_loggers()
+                if results[0] > self.best_mAP:
+                    self.best_mAP = results[0]
+                    self._save_ckpt(name='best', metric=self.best_mAP)
+            #if epoch % 5 == 0:
+            if epoch>10:
+                self.model.unfreeze()
             self._save_ckpt(metric=0)
-            # if epoch >= 2:
-            #     results, imgs = self._valid_epoch()
-            #     for k, v in zip(self.logger_custom, results):
-            #         self.writer.add_scalar(k, v, global_step=self.global_epoch)
-            #     for i in range(len(imgs)):
-            #         self.writer.add_image("detections_{}".format(i), imgs[i].transpose(2, 0, 1),
-            #                               global_step=self.global_epoch)
-            #     self._reset_loggers()
-            #     if results[0] > self.best_mAP:
-            #         self.best_mAP = results[0]
-            #         self._save_ckpt(name='best', metric=self.best_mAP)
 
     def _train_epoch(self):
         self.model.train()
@@ -218,12 +200,24 @@ class BaseTrainer:
                 print(self.global_iter)
                 for k, v in self.logger_losses.items():
                     print(k, ":", v.get_avg())
+            if self.args.EXPER.experiment_name == 'strongerv3_quantile':
+                self.train_step_quantile(img, labels)
             if self.args.EXPER.experiment_name == 'strongerv3_quantile_adjusted':
                 self.train_step_quantile_adjusted(img, labels)
-            elif self.args.EXPER.experiment_name == 'strongerv3_cdf':
-                self.train_step_cdf(img, labels)
             else:
                 self.train_step(img, labels)
+    def _crps_calculate(self, num_samples):
+        self.model.eval()
+        for sample_num in range(num_samples):
+            for i, inputs in tqdm(enumerate(self.test_dataloader),total=len(self.test_dataloader)):
+                inputs = [input if isinstance(input, list) else input.squeeze(0) for input in inputs]
+                img, _, _, *labels = inputs
+                if self.args.EXPER.experiment_name == 'strongerv3_quantile':
+                    self.crps_step(img, labels)
+                if self.args.EXPER.experiment_name == 'strongerv3_quantile_adjusted':
+                    self.crps_step(img, labels)
+                else:
+                    self.crps_step(img, labels)
     def crps_step(self, imgs, labels):
         imgs = imgs.cuda()
         labels = [label.cuda() for label in labels]
@@ -255,15 +249,16 @@ class BaseTrainer:
         self.LossBox.update(GIOUloss.item())
         self.LossConf.update(conf_loss.item())
         self.LossClass.update(probloss.item())
-    def train_step_quantile_adjusted(self, imgs, labels):
+    def train_step_quantile(self, imgs, labels):
         imgs = imgs.cuda()
         labels = [label.cuda() for label in labels]
         label_sbbox, label_mbbox, label_lbbox, sbboxes, mbboxes, lbboxes = labels
-        #print(label_sbbox.view(bz,-1,5+self.numclass))
-        alpha = torch.rand([self.args.OPTIM.batch_size, 4])
+        alpha = torch.rand([self.args.OPTIM.batch_size, 4])#torch.full([self.args.OPTIM.batch_size, 4], fill_value = 0)
+        #outsmall, outmid, outlarge, predsmall, predmid, predlarge, outsmall_orig, outmid_orig, outlarge_orig, predsmall_orig,predmid_orig,predlarge_orig = self.model(imgs, alpha)
         outsmall, outmid, outlarge, predsmall, predmid, predlarge = self.model(imgs, alpha)
-        GIOUloss,conf_loss,probloss = yololoss_quantile_adjusted(self.args.MODEL,outsmall, outmid, outlarge,
+        GIOUloss,conf_loss,probloss = yololoss_quantile(self.args.MODEL,outsmall, outmid, outlarge, #outsmall_orig, outmid_orig, outlarge_orig,
                             predsmall, predmid, predlarge,
+                             #predsmall_orig, predmid_orig, predlarge_orig,
                              label_sbbox, label_mbbox, label_lbbox, sbboxes, mbboxes, lbboxes, alpha)
         GIOUloss=GIOUloss.sum()/imgs.shape[0]
         conf_loss=conf_loss.sum()/imgs.shape[0]
@@ -278,21 +273,17 @@ class BaseTrainer:
         self.LossBox.update(GIOUloss.item())
         self.LossConf.update(conf_loss.item())
         self.LossClass.update(probloss.item())
-    def train_step_cdf(self, imgs, labels):
+    def train_step_quantile_adjusted(self, imgs, labels):
         imgs = imgs.cuda()
         labels = [label.cuda() for label in labels]
         label_sbbox, label_mbbox, label_lbbox, sbboxes, mbboxes, lbboxes = labels
-        slabel_noise = label_sbbox[..., 0:4]+(torch.randn_like(label_sbbox[..., 0:4]) - 0.5)*3
-        mlabel_noise = label_mbbox[..., 0:4]+(torch.randn_like(label_mbbox[..., 0:4]) - 0.5)*3
-        llabel_noise = label_lbbox[..., 0:4]+(torch.randn_like(label_lbbox[..., 0:4]) - 0.5)*3
-
-        slabel = slabel_noise.reshape(label_sbbox.shape[0], label_sbbox.shape[1], label_sbbox.shape[2], label_sbbox.shape[3]*4).permute(0, 3, 1, 2)
-        mlabel = mlabel_noise.reshape(label_mbbox.shape[0], label_mbbox.shape[1], label_mbbox.shape[2], label_mbbox.shape[3]*4).permute(0, 3, 1, 2)
-        llabel = llabel_noise.reshape(label_lbbox.shape[0], label_lbbox.shape[1], label_lbbox.shape[2], label_lbbox.shape[3]*4).permute(0, 3, 1, 2)
-        outsmall, outmid, outlarge, predsmall, predmid, predlarge = self.model(imgs, llabel, mlabel, slabel)
-        GIOUloss,conf_loss,probloss = yololoss_cdf(self.args.MODEL,outsmall, outmid, outlarge,
+        #print(label_sbbox.view(bz,-1,5+self.numclass))
+        alpha = torch.rand([self.args.OPTIM.batch_size, 4])
+        outsmall, outmid, outlarge, predsmall, predmid, predlarge, outsmall_orig, outmid_orig, outlarge_orig, predsmall_orig,predmid_orig,predlarge_orig = self.model(imgs, alpha)
+        GIOUloss,conf_loss,probloss = yololoss_quantile_adjusted(self.args.MODEL,outsmall, outmid, outlarge, outsmall_orig, outmid_orig, outlarge_orig,
                             predsmall, predmid, predlarge,
-                             label_sbbox, label_mbbox, label_lbbox, sbboxes, mbboxes, lbboxes, llabel_noise, mlabel_noise, slabel_noise)
+                             predsmall_orig, predmid_orig, predlarge_orig,
+                             label_sbbox, label_mbbox, label_lbbox, sbboxes, mbboxes, lbboxes, alpha)
         GIOUloss=GIOUloss.sum()/imgs.shape[0]
         conf_loss=conf_loss.sum()/imgs.shape[0]
         probloss=probloss.sum()/imgs.shape[0]
@@ -306,27 +297,11 @@ class BaseTrainer:
         self.LossBox.update(GIOUloss.item())
         self.LossConf.update(conf_loss.item())
         self.LossClass.update(probloss.item())
-    def sample_quantile_load(self, numsamples, validiter=-1):
-        self.TESTevaluator.load_dict()
-        self.TESTevaluator.get_calibration_samples()
-        self.TESTevaluator.get_distribution_samples()
-        results = self.TESTevaluator.evaluate()
-        imgs = self.TESTevaluator.visual_imgs
-        for k, v in zip(self.logger_custom, results):
-            print("{}:{}".format(k, v))
-        return None
     def sample_quantile(self, num_samples,validiter=-1):
       def _postprocess(pred_bbox, test_input_size, org_img_shape):
-          if self.args.MODEL.boxloss == 'KL' or self.args.MODEL.boxloss == 'quantile':
-              pred_coor = pred_bbox[:, 0:4]
-              pred_vari = pred_bbox[:, 4:8]
-              pred_vari = torch.exp(pred_vari)
-              pred_conf = pred_bbox[:, 8]
-              pred_prob = pred_bbox[:, 9:]
-          else:
-              pred_coor = pred_bbox[:, 0:4]
-              pred_conf = pred_bbox[:, 4]
-              pred_prob = pred_bbox[:, 5:]
+          pred_coor = pred_bbox[:, 0:4]
+          pred_conf = pred_bbox[:, 4]
+          pred_prob = pred_bbox[:, 5:]
           org_h, org_w = org_img_shape
           resize_ratio = min(1.0 * test_input_size / org_w, 1.0 * test_input_size / org_h)
           dw = (test_input_size - resize_ratio * org_w) / 2
@@ -337,18 +312,17 @@ class BaseTrainer:
           x1,y1=torch.max(x1,torch.zeros_like(x1)),torch.max(y1,torch.zeros_like(y1))
           x2,y2=torch.min(x2,torch.ones_like(x2)*(org_w-1)),torch.min(y2,torch.ones_like(y2)*(org_h-1))
           pred_coor=torch.cat([x1,y1,x2,y2],dim=-1)
+
           # ***********************
           if pred_prob.shape[-1]==0:
               pred_prob = torch.ones((pred_prob.shape[0], 1)).cuda()
           # ***********************
           scores = pred_conf.unsqueeze(-1) * pred_prob
           bboxes = torch.cat([pred_coor, scores], dim=-1)
-          return bboxes,pred_vari
+          return bboxes
       s = time.time()
       self.model.eval()
-      # return self.sample_quantile_load(20)
       for idx_batch, inputs in tqdm(enumerate(self.test_dataloader),total=len(self.test_dataloader)):
-      #for idx_batch, inputs in tqdm(enumerate(self.test_dataloader),total=len(self.test_dataloader)):
           if idx_batch == validiter:  # to save time
               break
           inputs = [input if isinstance(input, list) else input.squeeze(0) for input in inputs]
@@ -357,35 +331,28 @@ class BaseTrainer:
           ori_shapes = ori_shapes.cuda()
           with torch.no_grad():
               convlarge, convmid, convsmall = self.model.module.partial_forward(imgs)
+          alpha = torch.full([self.args.OPTIM.batch_size, 4], fill_value = 0.5)
           with torch.no_grad():
-              outlarge_orig, outmid_orig, outsmall_orig = self.model.module.partial_forward_orig(convlarge, convmid, convsmall)
-
-          bbox_array = [torch.cat([self.model.module.decode_infer(outsmall_orig, 8), self.model.module.decode_infer(outmid_orig, 16), self.model.module.decode_infer(outlarge_orig, 32)], dim = 1)]
+              outputs = self.model.module.partial_forward_2(convlarge, convmid, convsmall, alpha)
+          bbox_array = [outputs.cpu()]
           for i in range(num_samples):
-              #alpha = torch.full([self.args.OPTIM.batch_size, 4], fill_value = i/(num_samples-1))
-              alpha =  torch.rand([self.args.OPTIM.batch_size, 4])##torch.rand([self.args.OPTIM.batch_size, 4])
+              alpha = torch.rand([self.args.OPTIM.batch_size, 4])
               with torch.no_grad():
-                  outputs = self.model.module.partial_forward_2(convlarge, convmid, convsmall, outlarge_orig, outmid_orig, outsmall_orig, alpha)
+                  outputs = self.model.module.partial_forward_2(convlarge, convmid, convsmall, alpha).cpu()
                   bbox_array.append(outputs)
           bbox_final = torch.stack(bbox_array, dim = 3)
           for imgidx in range(len(outputs)):
               postprocessed_array = []
               for i in range(num_samples+1):
-                  bbox, bboxvari = _postprocess(bbox_final[imgidx, :, :, i], imgs.shape[-1], ori_shapes[imgidx])
-                  postprocessed_array.append(bbox)
-              bbox = torch.stack(postprocessed_array, dim = 2)
-              nms_boxes, nms_scores, nms_labels = torch_nms_sampling(self.args.EVAL,bbox,
-                                                               variance=bboxvari)
+                  postprocessed_array.append(_postprocess(bbox_final[imgidx, :, :, i], imgs.shape[-1], ori_shapes[imgidx].cpu()))
+              bbox_image = torch.stack(postprocessed_array, dim = 2)
+              nms_boxes, nms_scores, nms_labels = torch_nms_sampling(self.args.EVAL,bbox_image,
+                                                               variance=None)
               if nms_boxes is not None:
                   self.TESTevaluator.append(imgpath[imgidx][0],
                                             nms_boxes.cpu().numpy(),
                                             nms_scores.cpu().numpy(),
-                                            nms_labels.cpu().numpy(),
-                                            bboxvari.cpu().numpy())
-
-      self.TESTevaluator.save_dict()
-      self.TESTevaluator.load_dict()
-      self.TESTevaluator.get_distribution_samples()
+                                            nms_labels.cpu().numpy())
       results = self.TESTevaluator.evaluate()
       imgs = self.TESTevaluator.visual_imgs
       for k, v in zip(self.logger_custom, results):
@@ -393,74 +360,7 @@ class BaseTrainer:
       return results, imgs
     def sample_gaussian(self,num_samples, validiter=-1):
         def _postprocess(pred_bbox, test_input_size, org_img_shape):
-            pred_coor = pred_bbox[:, 0:4]
-            pred_vari = pred_bbox[:, 4:8]
-            pred_vari = torch.exp(pred_vari)
-            pred_conf = pred_bbox[:, 8]
-            pred_prob = pred_bbox[:, 9:]
-            org_h, org_w = org_img_shape
-            resize_ratio = min(1.0 * test_input_size / org_w, 1.0 * test_input_size / org_h)
-            dw = (test_input_size - resize_ratio * org_w) / 2
-            dh = (test_input_size - resize_ratio * org_h) / 2
-            pred_coor[:, 0::2] = 1.0 * (pred_coor[:, 0::2] - dw) / resize_ratio
-            pred_coor[:, 1::2] = 1.0 * (pred_coor[:, 1::2] - dh) / resize_ratio
-            x1,y1,x2,y2=torch.split(pred_coor,[1,1,1,1],dim=1)
-            x1,y1=torch.max(x1,torch.zeros_like(x1)),torch.max(y1,torch.zeros_like(y1))
-            x2,y2=torch.min(x2,torch.ones_like(x2)*(org_w-1)),torch.min(y2,torch.ones_like(y2)*(org_h-1))
-            pred_coor=torch.cat([x1,y1,x2,y2],dim=-1)
-
-            # ***********************
-            if pred_prob.shape[-1]==0:
-                pred_prob = torch.ones((pred_prob.shape[0], 1)).cuda()
-            # ***********************
-            scores = pred_conf.unsqueeze(-1) * pred_prob
-            bboxes = torch.cat([pred_coor, scores], dim=-1)
-            return bboxes,pred_vari
-        s = time.time()
-        self.model.eval()
-        #for idx_batch, inputs in tqdm(enumerate(self.train_dataloader),total=len(self.train_dataloader)):
-        for idx_batch, inputs in tqdm(enumerate(self.test_dataloader),total=len(self.test_dataloader)):
-            torch.cuda.empty_cache()
-            if idx_batch == validiter:  # to save time
-                break
-            inputs = [input if isinstance(input, list) else input.squeeze(0) for input in inputs]
-            (imgs, imgpath, ori_shapes, *_) = inputs
-            imgs = imgs.cuda()
-            ori_shapes = ori_shapes.cuda()
-            alpha = torch.full([self.args.OPTIM.batch_size, 4], fill_value = 0.5)
-            with torch.no_grad():
-                #outputs = self.model(imgs)
-                convlarge, convmid, convsmall = self.model.module.partial_forward(imgs)
-                outlarge_orig, outmid_orig, outsmall_orig = self.model.module.partial_forward_orig(convlarge, convmid, convsmall)
-                outputs = torch.cat([self.model.module.decode_infer(outsmall_orig, 8), self.model.module.decode_infer(outmid_orig, 16), self.model.module.decode_infer(outlarge_orig, 32)], dim = 1)
-                #outputs = self.model(imgs, alpha)
-                #print(outputs)
-            for imgidx in range(len(outputs)):
-                bbox,bboxvari = _postprocess(outputs[imgidx], imgs.shape[-1], ori_shapes[imgidx])
-                #print(bboxvari)
-                bbox = einops.repeat(bbox, 'm n -> m n k', k=(num_samples+1))
-                bbox[:, 0:4, 1:] = torch.normal(bbox[:, 0:4, 1:], einops.repeat(torch.sqrt(bboxvari), 'm n -> m n k', k=num_samples))
-                nms_boxes, nms_scores, nms_labels = torch_nms_sampling(self.args.EVAL,bbox,
-                                                                 variance=bboxvari)
-                if nms_boxes is not None:
-                    self.TESTevaluator.append(imgpath[imgidx][0],
-                                              nms_boxes.cpu().numpy(),
-                                              nms_scores.cpu().numpy(),
-                                              nms_labels.cpu().numpy(),
-                                              bboxvari.cpu().numpy())
-        self.TESTevaluator.save_dict()
-        self.TESTevaluator.load_dict()
-        self.TESTevaluator.get_distribution_samples()
-        results = self.TESTevaluator.evaluate()
-        imgs = self.TESTevaluator.visual_imgs
-        for k, v in zip(self.logger_custom, results):
-            print("{}:{}".format(k, v))
-        return results, imgs
-    def transformAlpha(self, alpha):
-        return np.tan((alpha)*math.pi*0.95-0.95*math.pi/2)
-    def _valid_epoch(self,validiter=-1):
-        def _postprocess(pred_bbox, test_input_size, org_img_shape):
-            if self.args.MODEL.boxloss == 'KL' or self.args.MODEL.boxloss == 'quantile':
+            if self.args.MODEL.boxloss == 'KL':
                 pred_coor = pred_bbox[:, 0:4]
                 pred_vari = pred_bbox[:, 4:8]
                 pred_vari = torch.exp(pred_vari)
@@ -491,10 +391,6 @@ class BaseTrainer:
                 return bboxes, pred_vari
             else:
                 return bboxes,None
-
-        evaluation_method = "crps"
-        if evaluation_method == "crps":
-            return self.sample_quantile(20, validiter=-1)
         s = time.time()
         self.model.eval()
         for idx_batch, inputs in tqdm(enumerate(self.test_dataloader),total=len(self.test_dataloader)):
@@ -504,13 +400,83 @@ class BaseTrainer:
             (imgs, imgpath, ori_shapes, *_) = inputs
             imgs = imgs.cuda()
             ori_shapes = ori_shapes.cuda()
+            alpha = torch.full([self.args.OPTIM.batch_size, 4], fill_value = 0.5)
             with torch.no_grad():
-                if self.args.EXPER.experiment_name == "strongerv3_quantile" or self.args.EXPER.experiment_name == "strongerv3_quantile_adjusted":
-                     alpha = torch.full([self.args.OPTIM.batch_size, 4], fill_value = 0.5)
-                     outputs = self.model(imgs, alpha)
-                     # convlarge, convmid, convsmall = self.model.module.partial_forward(imgs)
-                     # outlarge_orig, outmid_orig, outsmall_orig = self.model.module.partial_forward_orig(convlarge, convmid, convsmall)
-                     # outputs = torch.cat([self.model.module.decode_infer(outsmall_orig, 8), self.model.module.decode_infer(outmid_orig, 16), self.model.module.decode_infer(outlarge_orig, 32)], dim = 1)
+                if self.args.EXPER.experiment_name == "strongerv3_quantile":
+                    outputs = self.model(imgs, alpha)
+                elif self.args.EXPER.experiment_name == "strongerv3_quantile_adjusted":
+                    convlarge, convmid, convsmall = self.model.module.partial_forward(imgs)
+                    outputs = self.model.module.partial_forward_2(convlarge, convmid, convsmall, alpha)
+                else:
+                    outputs = self.model(imgs)
+            for imgidx in range(len(outputs)):
+                bbox,bboxvari = _postprocess(outputs[imgidx], imgs.shape[-1], ori_shapes[imgidx])
+                bbox = einops.repeat(bbox, 'm n -> m n k', k=(num_samples+1))
+                bbox[:, 0:4, 1:] = torch.normal(bbox[:, 0:4, 1:], einops.repeat(bboxvari, 'm n -> m n k', k=num_samples))
+                nms_boxes, nms_scores, nms_labels = torch_nms_sampling(self.args.EVAL,bbox,
+                                                                 variance=bboxvari)
+                if nms_boxes is not None:
+                    self.TESTevaluator.append(imgpath[imgidx][0],
+                                              nms_boxes.cpu().numpy(),
+                                              nms_scores.cpu().numpy(),
+                                              nms_labels.cpu().numpy())
+        results = self.TESTevaluator.evaluate()
+        imgs = self.TESTevaluator.visual_imgs
+        for k, v in zip(self.logger_custom, results):
+            print("{}:{}".format(k, v))
+        return results, imgs
+    def _valid_epoch(self,validiter=-1):
+        def _postprocess(pred_bbox, test_input_size, org_img_shape):
+            if self.args.MODEL.boxloss == 'KL':
+                pred_coor = pred_bbox[:, 0:4]
+                pred_vari = pred_bbox[:, 4:8]
+                pred_vari = torch.exp(pred_vari)
+                pred_conf = pred_bbox[:, 8]
+                pred_prob = pred_bbox[:, 9:]
+            else:
+                pred_coor = pred_bbox[:, 0:4]
+                pred_conf = pred_bbox[:, 4]
+                pred_prob = pred_bbox[:, 5:]
+            org_h, org_w = org_img_shape
+            resize_ratio = min(1.0 * test_input_size / org_w, 1.0 * test_input_size / org_h)
+            dw = (test_input_size - resize_ratio * org_w) / 2
+            dh = (test_input_size - resize_ratio * org_h) / 2
+            pred_coor[:, 0::2] = 1.0 * (pred_coor[:, 0::2] - dw) / resize_ratio
+            pred_coor[:, 1::2] = 1.0 * (pred_coor[:, 1::2] - dh) / resize_ratio
+            x1,y1,x2,y2=torch.split(pred_coor,[1,1,1,1],dim=1)
+            x1,y1=torch.max(x1,torch.zeros_like(x1)),torch.max(y1,torch.zeros_like(y1))
+            x2,y2=torch.min(x2,torch.ones_like(x2)*(org_w-1)),torch.min(y2,torch.ones_like(y2)*(org_h-1))
+            pred_coor=torch.cat([x1,y1,x2,y2],dim=-1)
+
+            # ***********************
+            if pred_prob.shape[-1]==0:
+                pred_prob = torch.ones((pred_prob.shape[0], 1)).cuda()
+            # ***********************
+            scores = pred_conf.unsqueeze(-1) * pred_prob
+            bboxes = torch.cat([pred_coor, scores], dim=-1)
+            if self.args.MODEL.boxloss == 'KL' and self.args.EVAL.varvote:
+                return bboxes, pred_vari
+            else:
+                return bboxes,None
+        evaluation_method = "crps"
+        if evaluation_method == "crps":
+            return self.sample_quantile(200, validiter)
+        s = time.time()
+        self.model.eval()
+        for idx_batch, inputs in tqdm(enumerate(self.test_dataloader),total=len(self.test_dataloader)):
+            if idx_batch == validiter:  # to save time
+                break
+            inputs = [input if isinstance(input, list) else input.squeeze(0) for input in inputs]
+            (imgs, imgpath, ori_shapes, *_) = inputs
+            imgs = imgs.cuda()
+            ori_shapes = ori_shapes.cuda()
+            alpha = torch.full([self.args.OPTIM.batch_size, 4], fill_value = 0.5)
+            with torch.no_grad():
+                if self.args.EXPER.experiment_name == "strongerv3_quantile":
+                    outputs = self.model(imgs, alpha)
+                elif self.args.EXPER.experiment_name == "strongerv3_quantile_adjusted":
+                    convlarge, convmid, convsmall = self.model.module.partial_forward(imgs)
+                    outputs = self.model.module.partial_forward_2(convlarge, convmid, convsmall, alpha)
                 else:
                     outputs = self.model(imgs)
             for imgidx in range(len(outputs)):

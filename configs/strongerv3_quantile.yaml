@@ -22,11 +22,12 @@ MODEL:
   "tvmonitor"
   ]
   numcls: 20
-  modeltype: StrongerV3
+  modeltype: StrongerV3Quantile
   backbone: 'mobilenetv2'
   backbone_pretrained: 'checkpoints/mobilenet_v2.pth'
+  boxloss: quantile
 EXPER:
-  experiment_name: 'strongerv3_sparse'
+  experiment_name: 'strongerv3_quantile'
 DATASET:
   dataset: 'VOC'
 
@@ -37,4 +38,4 @@ OPTIM:
   milestones: [30,45]
 
 Prune:
-  sparse: True
+  sparse: False

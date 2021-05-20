@@ -93,7 +93,7 @@ DATASET:
   dataset_root: '/datasets/coco'
 
 OPTIM:
-  batch_size: 24
+  batch_size: 5
   lr_initial: 2e-4
   total_epoch: 120
   milestones: [80,100]

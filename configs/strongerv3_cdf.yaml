@@ -22,11 +22,14 @@ MODEL:
   "tvmonitor"
   ]
   numcls: 20
-  modeltype: StrongerV3
+  modeltype: StrongerV3CDF
   backbone: 'mobilenetv2'
   backbone_pretrained: 'checkpoints/mobilenet_v2.pth'
+  boxloss: cdf
+  l1scale: 0.1
+  clsfocal: True
 EXPER:
-  experiment_name: 'strongerv3_sparse'
+  experiment_name: 'strongerv3_cdf'
 DATASET:
   dataset: 'VOC'
 
@@ -34,7 +37,7 @@ OPTIM:
   batch_size: 5
   lr_initial: 2e-4
   total_epoch: 60
-  milestones: [30,45]
+  milestones: [10, 15]
 
 Prune:
-  sparse: True
+  sparse: False

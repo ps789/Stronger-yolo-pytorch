@@ -82,8 +82,8 @@ class YOLO_Kmeans:
     f.close()
     return result
   def xml2boxes(self):
-    self.filename=["/home/gwl/datasets/VOCdevkit/VOC2012/Annotations",
-                   "/home/gwl/datasets/VOCdevkit/VOC2007/Annotations"]
+    self.filename=["/datasets/VOCdevkit/VOC2012/Annotations",
+                   "/datasets/VOCdevkit/VOC2007/Annotations"]
     dataset = []
     for dir in self.filename:
       for xml_file in glob.glob("{}/*xml".format(dir)):

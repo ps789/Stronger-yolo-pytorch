@@ -59,7 +59,7 @@ class EvaluatorVOC(Evaluator):
                 # build recgt according to appeard imgs
                 _recs_gt = defaultdict(dict)
                 for imgidx in set(img_idxs):
-                    _rec = [rec for rec in self.rec_gt[imgidx] if rec['label'] == self.cateNames.index(cls)]
+                    _rec = [rec for rec in self.rec_gt[imgidx[19:]] if rec['label'] == self.cateNames.index(cls)]
                     _box = np.array([rec['bbox'] for rec in _rec])
                     _dif = np.array([rec['difficult'] for rec in _rec]).astype(np.bool)
                     _detected = [False] * len(_rec)
@@ -69,15 +69,20 @@ class EvaluatorVOC(Evaluator):
                     _recs_gt[imgidx]['detected'] = _detected
 
                 # computer iou for each pred record
+
                 for idx in range(len(img_idxs)):
                     _rec_gt = _recs_gt[img_idxs[idx]]
+                    #print("hello")
                     _bbGT = _rec_gt['bbox']
                     _bbPre = bboxs[idx, :]
+                    #print(_bbGT)
+                    #print(_bbPre)
                     ovmax = -np.inf
                     if _bbGT.size > 0:
                         # compute overlaps
                         # intersection
                         ixmin = np.maximum(_bbGT[:, 0], _bbPre[0])
+                        #print(ixmin)
                         iymin = np.maximum(_bbGT[:, 1], _bbPre[1])
                         ixmax = np.minimum(_bbGT[:, 2], _bbPre[2])
                         iymax = np.minimum(_bbGT[:, 3], _bbPre[3])
@@ -90,7 +95,9 @@ class EvaluatorVOC(Evaluator):
                                (_bbGT[:, 3] - _bbGT[:, 1]) - inters)
                         overlaps = inters / uni
                         ovmax = np.max(overlaps)
+                        #print(ovmax)
                         jmax = np.argmax(overlaps)
+                        #print(jmax)
                     # TODO add flexible threshold
                     if ovmax > self.iou_thres:
                         if not _rec_gt['difficult'][jmax]:
@@ -116,7 +123,8 @@ class EvaluatorVOC(Evaluator):
         filepath = os.path.join(self.dataset_root, 'VOC2007', 'ImageSets', 'Main', 'test.txt')
         with open(filepath, 'r') as f:
             filelist = f.readlines()
-
+        print("nya")
+        print(len(filelist))
         filelist = [file.strip() for file in filelist]
         for file in filelist:
             _, boxGT, labelGT, difficult = PascalVocXmlParser(self._annopath.format(file), self.cateNames).parse(

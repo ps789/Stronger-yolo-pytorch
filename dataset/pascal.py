@@ -18,8 +18,10 @@ class VOCdataset(BaseDataset):
         self._imgpath = os.path.join('{}', 'JPEGImages', '{}.jpg')
         self._ids = []
         for year, set in subset:
-            rootpath = os.path.join(self.dataset_root, 'VOC' + year)
-            for line in open(os.path.join(rootpath, 'ImageSets', 'Main', '{}.txt'.format(set))):
+            rootpath = self.dataset_root+'/VOC' + year
+            #rootpath = os.path.join(self.dataset_root, 'VOC' + year)
+            for line in open(rootpath + '/ImageSets/Main/{}.txt'.format(set)):
+            #for line in open(os.path.join(rootpath, 'ImageSets', 'Main', '{}.txt'.format(set))):
                 self._ids.append((rootpath, line.strip()))
 
     def __len__(self):
@@ -70,7 +72,7 @@ if __name__ == '__main__':
     cfg.merge_from_file(args.config_file)
     cfg.merge_from_list(args.opts)
     cfg.EVAL.iou_thres = 0.5
-    cfg.DATASET.dataset_root='/disk3/datasets/VOCdevkit'
+    cfg.DATASET.dataset_root='VOCdevkit'
     cfg.freeze()
     train,val=get_dataset(cfg)
     for data in train:

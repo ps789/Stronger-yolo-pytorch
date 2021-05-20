@@ -107,7 +107,8 @@ class StrongerV3KL(nn.Module):
 
         output=output.view(bz,-1,5+self.numclass+4)
         return output
-
+    def get_info(self):
+        return self.backbone.state_dict(),self.headslarge.state_dict(), self.detlarge.state_dict(), self.mergelarge.state_dict(), self.headsmid.state_dict(), self.detmid.state_dict(), self.mergemid.state_dict(), self.headsmall.state_dict(), self.detsmall.state_dict()
     def forward(self,input):
         feat_small, feat_mid, feat_large = self.backbone(input)
         conv = self.headslarge(feat_large)

@@ -2,7 +2,7 @@ from models.backbone import *
 from models.backbone.helper import *
 from models.backbone.baseblock import *
 
-class StrongerV3(nn.Module):
+class StrongerV3Quantile(nn.Module):
     def __init__(self,cfg):
         super().__init__()
         self.cfg=cfg
@@ -17,7 +17,7 @@ class StrongerV3(nn.Module):
             ('conv1', sepconv_bn(512, 1024, kernel=3, stride=1, padding=1,seprelu=cfg.seprelu)),
             ('conv2', conv_bn(1024, 512, kernel=1,stride=1,padding=0)),
             ('conv3', sepconv_bn(512, 1024, kernel=3, stride=1, padding=1,seprelu=cfg.seprelu)),
-            ('conv4', conv_bn(1024, 512, kernel=1,stride=1,padding=0)),
+            ('conv4', conv_bn(1024, 512, kernel=1,stride=1,padding=0)   ),
         ]))
         self.detlarge=nn.Sequential(OrderedDict([
             ('conv5',sepconv_bn(512,1024,kernel=3, stride=1, padding=1,seprelu=cfg.seprelu)),
@@ -59,9 +59,25 @@ class StrongerV3(nn.Module):
             self.asff0 = ASFF(0, activate=self.activate_type)
             self.asff1 = ASFF(1, activate=self.activate_type)
             self.asff2 = ASFF(2, activate=self.activate_type)
-    def get_info(self):
-        return self.backbone,self.headslarge, self.detlarge, self.mergelarge, self.headsmid, self.detmid, self.mergemid, self.headsmall, self.detsmall
-
+        self.conv_bias_large_orig = conv_bias(1024, self.gt_per_grid*(self.numclass+5),kernel=1,stride=1,padding=0)
+        self.conv_bias_mid_orig = conv_bias(512, self.gt_per_grid*(self.numclass+5),kernel=1,stride=1,padding=0)
+        self.conv_bias_small_orig = conv_bias(256, self.gt_per_grid*(self.numclass+5),kernel=1,stride=1,padding=0)
+        self.sepconv_large = sepconv_bn(512,1024,kernel=3, stride=1, padding=1,seprelu=self.cfg.seprelu)
+        self.conv_bias_large =  nn.Sequential(conv_bias(1028, 1024,kernel=1,stride=1,padding=0),
+                                nn.LeakyReLU(0.1),
+                                nn.BatchNorm2d(1024),
+                                conv_bias(1024, self.gt_per_grid*(self.numclass+5),kernel=1,stride=1,padding=0))
+                                #conv_bias(1028, self.gt_per_grid*(self.numclass+5),kernel=1,stride=1,padding=0)
+        self.sepconv_mid = sepconv_bn(256,512,kernel=3, stride=1, padding=1,seprelu=self.cfg.seprelu)
+        self.conv_bias_mid =  nn.Sequential(conv_bias(516, 512,kernel=1,stride=1,padding=0),
+                            nn.BatchNorm2d(512),
+                            nn.LeakyReLU(0.1),
+                            conv_bias(512, self.gt_per_grid*(self.numclass+5),kernel=1,stride=1,padding=0))#conv_bias(516, self.gt_per_grid*(self.numclass+5),kernel=1,stride=1,padding=0)
+        self.sepconv_small = sepconv_bn(128,256,kernel=3, stride=1, padding=1,seprelu=self.cfg.seprelu)
+        self.conv_bias_small =  nn.Sequential(conv_bias(260, 256,kernel=1,stride=1,padding=0),
+                                nn.BatchNorm2d(256),
+                                nn.LeakyReLU(0.1),
+                                conv_bias(256, self.gt_per_grid*(self.numclass+5),kernel=1,stride=1,padding=0))#conv_bias(260, self.gt_per_grid*(self.numclass+5),kernel=1,stride=1,padding=0)
     def decode(self,output,stride):
         bz=output.shape[0]
         gridsize=output.shape[-1]
@@ -69,7 +85,6 @@ class StrongerV3(nn.Module):
         output=output.permute(0,2,3,1)
         output=output.view(bz,gridsize,gridsize,self.gt_per_grid,5+self.numclass)
         x1y1,x2y2,conf,prob=torch.split(output,[2,2,1,self.numclass],dim=4)
-        #print(x1y1.size())
         shiftx=torch.arange(0,gridsize,dtype=torch.float32)
         shifty=torch.arange(0,gridsize,dtype=torch.float32)
         shifty,shiftx=torch.meshgrid([shiftx,shifty])
@@ -84,7 +99,6 @@ class StrongerV3(nn.Module):
         conf=torch.sigmoid(conf)
         prob=torch.sigmoid(prob)
         output=torch.cat((xyxy,conf,prob),4)
-        #print(output.size())
         return output
     def decode_infer(self,output,stride):
         bz=output.shape[0]
@@ -111,7 +125,7 @@ class StrongerV3(nn.Module):
         output=output.view(bz,-1,5+self.numclass)
         return output
 
-    def forward(self,input):
+    def forward(self,input, input_alpha):
         feat_small, feat_mid, feat_large = self.backbone(input)
         conv = self.headslarge(feat_large)
         convlarge=conv
@@ -128,22 +142,40 @@ class StrongerV3(nn.Module):
             convlarge=self.asff0(convlarge,convmid,convsmall)
             convmid=self.asff1(convlarge,convmid,convsmall)
             convsmall=self.asff2(convlarge,convmid,convsmall)
-        outlarge = self.detlarge(convlarge)
-        outmid = self.detmid(convmid)
-        outsmall = self.detsmall(convsmall)
+        alpha = input_alpha.repeat(convlarge.size()[2], convlarge.size()[3], 1, 1).permute(2, 3, 0, 1).to(device = 'cuda')
+        orig = self.sepconv_large(convlarge)
+        combined = torch.cat((orig, alpha), 1)
+        outlarge = self.conv_bias_large(combined)
+        #outlarge_orig = self.conv_bias_large_orig(orig)
+        alpha = input_alpha.repeat(convmid.size()[2], convmid.size()[3], 1, 1).permute(2, 3, 0, 1).to(device = 'cuda')
+        orig = self.sepconv_mid(convmid)
+        combined = torch.cat((orig, alpha), 1)
+        #outmid_orig = self.conv_bias_mid_orig(orig)
+        outmid = self.conv_bias_mid(combined)
+        alpha = input_alpha.repeat(convsmall.size()[2], convsmall.size()[3], 1, 1).permute(2, 3, 0, 1).to(device = 'cuda')
+        orig = self.sepconv_small(convsmall)
+        combined = torch.cat((orig, alpha), 1)
+        outsmall = self.conv_bias_small(combined)
+        #outsmall_orig = self.conv_bias_small_orig(orig)
         if self.training:
             predlarge = self.decode(outlarge, 32)
             predmid=self.decode(outmid,16)
             predsmall=self.decode(outsmall,8)
+            # predlarge_orig = self.decode(outlarge_orig, 32)
+            # predmid_orig=self.decode(outmid_orig,16)
+            # predsmall_orig=self.decode(outsmall_orig,8)
         else:
             predlarge = self.decode_infer(outlarge, 32)
             predmid = self.decode_infer(outmid, 16)
             predsmall = self.decode_infer(outsmall, 8)
+            #predlarge_orig = self.decode_infer(outlarge_orig, 32)
+            #predmid_orig = self.decode_infer(outmid_orig, 16)
+            #predsmall_orig = self.decode_infer(outsmall_orig, 8)
             pred=torch.cat([predsmall,predmid,predlarge],dim=1)
+            #pred_orig = torch.cat([predsmall_orig,predmid_orig,predlarge_orig],dim=1)
             return pred
-        return outsmall,outmid,outlarge,predsmall,predmid,predlarge
-    def export():
-        return self.headslarge, self.detlarge, self.mergelarge,self.headsmid, self.detmid, self.mergemid,self.headsmall, self.detsmall
+        return outsmall,outmid,outlarge,predsmall,predmid,predlarge#,outsmall_orig, outmid_orig,outlarge_orig, predsmall_orig,predmid_orig,predlarge_orig
+
 
 if __name__ == '__main__':
     import torch.onnx

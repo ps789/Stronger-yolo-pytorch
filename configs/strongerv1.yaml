@@ -37,7 +37,7 @@ DATASET:
   dataset: 'VOC'
 
 OPTIM:
-  batch_size: 8
+  batch_size: 5
   lr_initial: 1e-4
   total_epoch: 30
   milestones: [18,25]

@@ -72,7 +72,9 @@ class MobileNetV2(nn.Module):
                     constant_init(m, 1)
         else:
             raise TypeError('pretrained must be a str or None')
-
+    def freeze(self):
+        for param in self.features.parameters():
+            param.requires_grad = False
     def forward(self, x):
         outs = []
         for i in range(len(self.features)):
