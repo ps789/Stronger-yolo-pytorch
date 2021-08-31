@@ -25,7 +25,28 @@ class conv_bn(nn.Module):
     def forward(self, input):
         return self.convbn(input)
 
+class conv_bn_dropout(nn.Module):
+    def __init__(self, inp, oup, kernel, stride, padding, activate='relu6'):
+        super(conv_bn, self).__init__()
+        if activate == 'relu6':
+            self.convbn = nn.Sequential(OrderedDict([
+                ('conv', nn.Conv2d(inp, oup, kernel, stride, padding, bias=False)),
+                ('bn', nn.BatchNorm2d(oup)),
+                ('relu', nn.ReLU6(inplace=True)),
+                ('dropout', nn.Dropout2d(p=0.15))
+            ]))
+        elif activate == 'leaky':
+            self.convbn = nn.Sequential(OrderedDict([
+                ('conv', nn.Conv2d(inp, oup, kernel, stride, padding, bias=False)),
+                ('bn', nn.BatchNorm2d(oup)),
+                ('relu', nn.LeakyReLU(0.1)),
+                ('dropout', nn.Dropout2d(p=0.15))
+            ]))
+        else:
+            raise AttributeError("activate type not supported")
 
+    def forward(self, input):
+        return self.convbn(input)
 class ASFF(nn.Module):
     def __init__(self, level, activate, rfb=False, vis=False):
         super(ASFF, self).__init__()
@@ -126,6 +147,8 @@ class sepconv_bn_dropout(nn.Module):
 
     def forward(self, input):
         return self.sepconv_bn_dropout(input)
+
+
 
 
 class sepconv_bn(nn.Module):
