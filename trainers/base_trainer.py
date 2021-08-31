@@ -240,7 +240,8 @@ class BaseTrainer:
             elif self.args.EXPER.experiment_name == 'strongerv3_cdf':
                 self.train_step_cdf(img, labels)
             else:
-                self.train_step_cdf_gaussian(img, labels)
+                self.train_step(img, labels)
+                #self.train_step_cdf_gaussian(img, labels)
     def crps_step(self, imgs, labels):
         imgs = imgs.cuda()
         labels = [label.cuda() for label in labels]
