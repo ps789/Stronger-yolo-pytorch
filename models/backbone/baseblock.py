@@ -27,7 +27,7 @@ class conv_bn(nn.Module):
 
 class conv_bn_dropout(nn.Module):
     def __init__(self, inp, oup, kernel, stride, padding, activate='relu6'):
-        super(conv_bn, self).__init__()
+        super(conv_bn_dropout, self).__init__()
         if activate == 'relu6':
             self.convbn = nn.Sequential(OrderedDict([
                 ('conv', nn.Conv2d(inp, oup, kernel, stride, padding, bias=False)),

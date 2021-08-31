@@ -4,11 +4,11 @@ from evaluator.voceval import EvaluatorVOC
 class Trainer(BaseTrainer):
   def __init__(self, args, model, optimizer,lrscheduler):
     super().__init__(args, model, optimizer,lrscheduler)
-    self.evaluation_method = "crps"
+    self.evaluation_method = "map"
 
   def _get_loggers(self):
     super()._get_loggers()
-    self.evaluation_method = "crps"
+    self.evaluation_method = "map"
     if self.evaluation_method == "crps":
         self.TESTevaluator = EvaluatorVOC_CRPS(anchors=None,
                                           cateNames=self.labels,

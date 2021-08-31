@@ -87,7 +87,8 @@ class BaseTrainer:
             state_dict=ckptfile['state_dict']
             new_state_dict= {}
             for k, v in state_dict.items():
-                name = k#"module."+k
+                #name = k
+                name = "module."+k
                 new_state_dict[name]=v
             self.model.load_state_dict(new_state_dict)
             if not self.args.finetune and not self.args.do_test and not self.args.Prune.do_test:
@@ -711,9 +712,9 @@ class BaseTrainer:
         if self.args.EXPER.experiment_name == 'strongerv3_cdf':
             return self.sample_cdf()
 
-        evaluation_method = "crps"
-        if evaluation_method == "crps":
-            return self.sample_quantile_ensemble(9, validiter=-1)
+        # evaluation_method = "crps"
+        # if evaluation_method == "crps":
+        #     return self.sample_quantile_ensemble(9, validiter=-1)
         s = time.time()
         self.model.eval()
         for idx_batch, inputs in tqdm(enumerate(self.test_dataloader),total=len(self.test_dataloader)):
