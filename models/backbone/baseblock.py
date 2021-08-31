@@ -99,6 +99,34 @@ class conv_bias(nn.Module):
     def forward(self, input):
         return self.conv(input)
 
+class sepconv_bn_dropout(nn.Module):
+    def __init__(self, inp, oup, kernel, stride, padding, seprelu):
+        super(sepconv_bn_dropout, self).__init__()
+        if seprelu:
+            self.sepconv_bn_dropout = nn.Sequential(OrderedDict([
+                ('sepconv', nn.Conv2d(inp, inp, kernel, stride, padding, groups=inp, bias=False)),
+                ('sepbn', nn.BatchNorm2d(inp)),
+                ('seprelu', nn.ReLU6(inplace=True)),
+                ('sepdropout', nn.Dropout2d(p=0.15)),
+                ('pointconv', nn.Conv2d(inp, oup, 1, 1, 0, bias=False)),
+                ('pointbn', nn.BatchNorm2d(oup)),
+                ('pointrelu', nn.ReLU6(inplace=True)),
+                ('pointdropout', nn.Dropout2d(p=0.15))
+            ]))
+        else:
+            self.sepconv_bn_dropout = nn.Sequential(OrderedDict([
+                ('sepconv', nn.Conv2d(inp, inp, kernel, stride, padding, groups=inp, bias=False)),
+                ('sepbn', nn.BatchNorm2d(inp)),
+                ('sepdropout', nn.Dropout2d(p=0.15)),
+                ('pointconv', nn.Conv2d(inp, oup, 1, 1, 0, bias=False)),
+                ('pointbn', nn.BatchNorm2d(oup)),
+                ('pointrelu', nn.ReLU6(inplace=True)),
+                ('pointdropout', nn.Dropout2d(p=0.15))
+            ]))
+
+    def forward(self, input):
+        return self.sepconv_bn_dropout(input)
+
 
 class sepconv_bn(nn.Module):
     def __init__(self, inp, oup, kernel, stride, padding, seprelu):

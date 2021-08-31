@@ -1,6 +1,6 @@
 from dataset.pycocotools.coco import COCO
 from dataset.pycocotools.cocoeval import COCOeval
-from utils.visualize import visualize_boxes
+from utils.visualize import visualize_boxes, visualize_boxes_2
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
@@ -15,7 +15,7 @@ class Evaluator:
 
     self.visual_imgs = []
     #show 10 images in tensorboard by default
-    self.num_visual=10
+    self.num_visual=30
     self.build_GT()
   def reset(self):
     pass
@@ -35,7 +35,7 @@ class Evaluator:
 
     # scoreGT = np.ones(shape=(labelGT.shape[0],))
     if boxesPre.ndim == 3:
-        visualize_boxes(image=imPre, boxes=boxesPre[:, :, 0], labels=labelsPre, probs=scoresPre, class_labels=self.cateNames)
+        visualize_boxes_2(image=imPre, boxes=boxesPre, labels=labelsPre, probs=scoresPre, class_labels=self.cateNames)
     else:
         visualize_boxes(image=imPre, boxes=boxesPre, labels=labelsPre, probs=scoresPre, class_labels=self.cateNames)
     # visualize_boxes(image=imGT, boxes=boxGT, labels=labelGT, probs=scoreGT,

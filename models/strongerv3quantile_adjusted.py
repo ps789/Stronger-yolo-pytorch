@@ -60,15 +60,15 @@ class StrongerV3Quantile_Adjusted(nn.Module):
             self.asff1 = ASFF(1, activate=self.activate_type)
             self.asff2 = ASFF(2, activate=self.activate_type)
         self.detlarge_quantile=nn.Sequential(OrderedDict([
-            ('conv23',sepconv_bn(516,1024,kernel=3, stride=1, padding=1,seprelu=cfg.seprelu)),
+            ('conv23',sepconv_bn_dropout(516,1024,kernel=3, stride=1, padding=1,seprelu=cfg.seprelu)),
             ('conv24', conv_bias(1024,self.gt_per_grid*4,kernel=1,stride=1,padding=0))
         ]))
         self.detmid_quantile=nn.Sequential(OrderedDict([
-            ('conv25',sepconv_bn(260,512,kernel=3, stride=1, padding=1,seprelu=cfg.seprelu)),
+            ('conv25',sepconv_bn_dropout(260,512,kernel=3, stride=1, padding=1,seprelu=cfg.seprelu)),
             ('conv26', conv_bias(512,self.gt_per_grid*4,kernel=1,stride=1,padding=0))
         ]))
         self.detsmall_quantile=nn.Sequential(OrderedDict([
-            ('conv27',sepconv_bn(132,256,kernel=3, stride=1, padding=1,seprelu=cfg.seprelu)),
+            ('conv27',sepconv_bn_dropout(132,256,kernel=3, stride=1, padding=1,seprelu=cfg.seprelu)),
             ('conv28', conv_bias(256,self.gt_per_grid*4,kernel=1,stride=1,padding=0))
         ]))
     def load_partial_state(self,backbone,headslarge, detlarge, mergelarge, headsmid, detmid, mergemid, headsmall, detsmall):

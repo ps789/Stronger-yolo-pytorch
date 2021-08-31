@@ -9,7 +9,6 @@ class Trainer(BaseTrainer):
   def _get_loggers(self):
     super()._get_loggers()
     self.evaluation_method = "crps"
-    #print(self.evaluation_method)
     if self.evaluation_method == "crps":
         self.TESTevaluator = EvaluatorVOC_CRPS(anchors=None,
                                           cateNames=self.labels,

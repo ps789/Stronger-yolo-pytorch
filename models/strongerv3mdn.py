@@ -105,10 +105,12 @@ class StrongerV3MDN(nn.Module):
         conf=torch.sigmoid(conf)
         prob=torch.sigmoid(prob)
         pi = (nn.Softmax(dim = 5)(pi.view(bz, gridsize, gridsize, self.gt_per_grid, 4, 5))).view(bz, gridsize, gridsize, self.gt_per_grid, 20)
+
         output=torch.cat((pi, xyxy,variance,conf,prob),4)
 
         output=output.view(bz,-1,self.numclass+1+5*4*3)
         return output
+
     def get_info(self):
         return self.backbone.state_dict(),self.headslarge.state_dict(), self.detlarge.state_dict(), self.mergelarge.state_dict(), self.headsmid.state_dict(), self.detmid.state_dict(), self.mergemid.state_dict(), self.headsmall.state_dict(), self.detsmall.state_dict()
     def forward(self,input):

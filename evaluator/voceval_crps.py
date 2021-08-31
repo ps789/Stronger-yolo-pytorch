@@ -39,7 +39,8 @@ class EvaluatorVOC_CRPS(Evaluator):
                 # boxGT=np.array(boxGT)
                 # labelGT=np.array(labelGT)
                 # self.append_visulize(imgpath, nms_boxes, nms_labels, nms_scores, boxGT, labelGT)
-                self.append_visulize(imgpath, nms_boxes, nms_labels, nms_scores, None, None)
+                #print(nms_boxes.shape)
+                self.append_visulize(imgpath, nms_boxes, nms_labels, nms_scores, None, None, savepath = "./samples/")
 
     def save_dict(self):
         pickle.dump(self.rec_pred, open( "rec_pred.p", "wb" ) )
@@ -107,9 +108,9 @@ class EvaluatorVOC_CRPS(Evaluator):
                 #compute CRPS
                 for img_idx in box_samples:
                     for img_num in box_samples[img_idx]:
-                        samples = np.concatenate(box_samples[img_idx][img_num], axis = 0).transpose().reshape(4, -1)
+                        samples = np.concatenate(box_samples[img_idx][img_num], axis = 1)
                         num_samples = samples.shape[1]
-                        crps_per_square.append(self.crps_sampling(samples, _recs_gt[img_idx]["bbox"][int(img_num), :], num_samples))
+                        crps_per_square.append(self.crps_sampling(samples, _recs_gt[img_idx]["bbox"][int(img_num), :]))
 
             crps_per_class.append(np.mean(np.array(crps_per_square)))
         return crps_per_class
@@ -238,11 +239,12 @@ class EvaluatorVOC_CRPS(Evaluator):
         dist = np.array(dist)
         np.savetxt("dist.csv", dist, delimiter=",")
         return None
-    def crps_sampling(self, samples, y_test, num_samples):
-        crps_first = (np.mean(np.abs(samples - np.repeat(y_test, num_samples).reshape(-1, num_samples))))
+    def crps_sampling(self, samples, y_test):
+        num_samples = samples.shape[-1]
+        crps_first = np.mean(np.abs(samples - np.repeat(y_test[..., np.newaxis], num_samples, axis = -1)))
         crps_second = 0
         for i in range(num_samples):
-            crps_second = crps_second+ np.mean(np.abs(samples - np.roll(samples, i)))/num_samples
+            crps_second = crps_second+ np.mean(np.abs(samples- np.roll(samples, i, axis = -1)))/num_samples
         return crps_first - crps_second/2
     def get_calibration_samples(self):
         calibration_values = []

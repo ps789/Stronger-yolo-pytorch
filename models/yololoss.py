@@ -120,19 +120,30 @@ def loss_per_scale(conv, pred, label, bboxes, stride,cfg):
     elif cfg.boxloss=="MDN":
         log_likelihood = 0
         box_sides = []
+        box_loss = []
+        mdn_size = 5
         for i in range(4):
-            gm = torch.distributions.mixture_same_family.MixtureSameFamily(
-            mixture_distribution=torch.distributions.Categorical(probs=pred_pi[..., i*5:i*5+5]),
-            component_distribution=torch.distributions.Normal(
-                loc=torch.squeeze(pred_coor[..., i*5:i*5+5]),
-                scale=torch.squeeze(torch.exp(-pred_vari[..., i*5:i*5+5]))))
-            log_likelihood -= gm.log_prob(label_coor[..., i])
-            box_sides.append(sample(pred_pi[..., i*5:i*5+5].view(-1, 5), torch.exp(-pred_vari[..., i*5:i*5+5]).view(-1, 5), pred_coor[..., i*5:i*5+5].view(-1, 5)).view(pred_pi.shape[0], pred_pi.shape[1], pred_pi.shape[2], pred_pi.shape[3]))
+            # gm = torch.distributions.mixture_same_family.MixtureSameFamily(
+            # mixture_distribution=torch.distributions.Categorical(probs=pred_pi[..., i*mdn_size:i*mdn_size+mdn_size]),
+            # component_distribution=torch.distributions.Normal(
+            #     loc=torch.squeeze(pred_coor[..., i*mdn_size:i*mdn_size+mdn_size]),
+            #     scale=torch.squeeze(torch.exp(-pred_vari[..., i*mdn_size:i*mdn_size+mdn_size]))))
+            # log_likelihood = -gm.log_prob(label_coor[..., i])
+            exponent = -0.5 * torch.square((label_coor[..., i].unsqueeze(-1) - pred_coor[..., i*mdn_size:i*mdn_size+mdn_size])) / (1e-4+torch.exp(-pred_vari[..., i*mdn_size:i*mdn_size+mdn_size]))
+            exponent = exponent + torch.log(1e-4+pred_pi[..., i*mdn_size:i*mdn_size+mdn_size]) - (0.5)*(np.log(2*np.pi)-pred_vari[..., i*mdn_size:i*mdn_size+mdn_size])
+            max_exponent = torch.max(exponent, dim = -1, keepdims=True)[0]
+            mod_exponent = exponent - max_exponent
+            gauss_mix = torch.sum(torch.exp(mod_exponent), axis = -1)
+            log_likelihood = -max_exponent.squeeze() - torch.log(1e-4+gauss_mix)
+            box_loss.append(log_likelihood)
+            box_sides.append(means(pred_pi[..., i*mdn_size:i*mdn_size+mdn_size].view(-1, mdn_size), torch.exp(-pred_vari[..., i*mdn_size:i*mdn_size+mdn_size]).view(-1, mdn_size), pred_coor[..., i*mdn_size:i*mdn_size+mdn_size].view(-1, mdn_size)).view(pred_pi.shape[0], pred_pi.shape[1], pred_pi.shape[2], pred_pi.shape[3]))
+
             #print(box_sides[i].shape)
+        box_loss = torch.stack(box_loss, dim = 4)
         box_sides = torch.stack(box_sides, dim = 4)
         #sample(pred_pi.view(-1, 5, 4), pred_vari.view(-1, 5, 4), pred_coor.view(-1, 5, 4))
         #getSamples(pred_pi.view(-1, 5, 4).cpu().detach().numpy(), pred_vari.view(-1, 5, 4).cpu().detach().numpy(), pred_coor.view(-1, 5, 4).cpu().detach().numpy())
-        bbox_loss = torch.unsqueeze(log_likelihood, 4)
+        bbox_loss = respond_bbox * bbox_loss_scale * box_loss * cfg.l1scale
     else:
         l1_loss = respond_bbox * bbox_loss_scale * (
                 torch.exp(-pred_vari) * smooth_loss(target=label_coor, input=pred_coor) + 0.5 * pred_vari) * cfg.l1scale
@@ -188,6 +199,49 @@ sbboxes, mbboxes, lbboxes, y_large, y_mid, y_small):
     conf_loss=conf_loss_s+conf_loss_m+conf_loss_l
     probloss=probloss_s+probloss_m+probloss_l
     return GIOUloss,conf_loss,probloss
+def yololoss_cdf_gaussian(cfg,conv_sbbox, conv_mbbox, conv_lbbox,
+pred_sbbox, pred_mbbox, pred_lbbox,
+label_sbbox, label_mbbox, label_lbbox,
+sbboxes, mbboxes, lbboxes, y_large, y_mid, y_small):
+    GIOUloss_s = cdfloss_gaussian(conv_sbbox, pred_sbbox, label_sbbox, sbboxes,
+                                strides[0],cfg=cfg, samples = y_small)
+    GIOUloss_m = cdfloss_gaussian(conv_mbbox, pred_mbbox, label_mbbox, mbboxes,
+        strides[1],cfg=cfg, samples = y_mid)
+    GIOUloss_l = cdfloss_gaussian(conv_lbbox, pred_lbbox, label_lbbox, lbboxes,
+        strides[2],cfg=cfg, samples = y_large)
+    GIOUloss=(GIOUloss_s+GIOUloss_m+GIOUloss_l)
+    return GIOUloss
+def cdfloss_gaussian(conv, pred, label, bboxes, stride, cfg, samples):
+    conv = conv.permute(0, 2, 3, 1)
+    conv_shape = conv.shape
+    batch_size = conv_shape[0]
+    output_size = conv_shape[1]
+    input_size = stride * output_size
+    numanchor = cfg.gt_per_grid
+    conv = conv.view(batch_size, output_size, output_size,numanchor, -1)
+    if cfg.boxloss == 'KL' or cfg.boxloss == 'quantile' or cfg.boxloss == 'cdf':
+        conv_raw_conf = conv[..., 8:9]
+        conv_raw_prob = conv[..., 9:]
+
+        pred_coor = pred[..., 0:4]
+        pred_vari = pred[..., 4:8]
+        pred_conf = pred[..., 8:9]
+        pred_prob = pred[..., 9:]
+    label_coor = label[..., 0:4]
+    respond_bbox = label[..., 4:5]
+    label_prob = label[..., 5:-1]
+    label_mixw = label[..., -1:]
+    probabilities = torch.distributions.normal.Normal(pred_coor, pred_vari).cdf(samples)
+    indicator = torch.where(samples - label_coor >= 0, 1, 0)
+    losses = (probabilities - indicator) ** 2
+    l1_loss = respond_bbox * (losses) #* cfg.l1scale * bbox_loss_scale
+    #print(torch.sum(l1_loss))
+    #print(pred_coor[torch.repeat_interleave(respond_bbox, 4, axis = 4) != 0])
+    bbox_loss = l1_loss
+    bbox_loss=bbox_loss*label_mixw
+    return(bbox_loss.sum())
+
+
 def cdfloss(conv, pred, label, bboxes, stride, cfg, samples):
     bcelogit_loss = torch.nn.BCEWithLogitsLoss(reduction='none')
     smooth_loss = torch.nn.SmoothL1Loss(reduction='none')
@@ -214,9 +268,13 @@ def cdfloss(conv, pred, label, bboxes, stride, cfg, samples):
     label_mixw = label[..., -1:]
     bbox_wh = label_coor[..., 2:] - label_coor[..., :2]
     bbox_loss_scale = 2.0 - 1.0 * bbox_wh[..., 0:1] * bbox_wh[..., 1:2] / (input_size ** 2)
+    #print(samples[torch.repeat_interleave(respond_bbox, 4, axis = 4) != 0])
+    #print(label_coor[torch.repeat_interleave(respond_bbox, 4, axis = 4) != 0])
     indicator = torch.where(samples - label_coor >= 0, 1, 0)
     losses = (pred_coor - indicator) ** 2
-    l1_loss = respond_bbox * (losses) * cfg.l1scale * bbox_loss_scale
+    l1_loss = respond_bbox * (losses) #* cfg.l1scale * bbox_loss_scale
+    #print(torch.sum(l1_loss))
+    #print(pred_coor[torch.repeat_interleave(respond_bbox, 4, axis = 4) != 0])
     bbox_loss = l1_loss
     bbox_loss=bbox_loss*label_mixw
     # (2)计算confidence损失
@@ -331,6 +389,15 @@ def sample(pi, sigma, mu):
             scale=torch.squeeze(sigma)))
     samples = gm.sample(torch.Size([num_samples]))
     return samples
+def means(pi, sigma, mu):
+    """Draw samples from a MoG.
+    """
+    gm = torch.distributions.mixture_same_family.MixtureSameFamily(
+        mixture_distribution=torch.distributions.Categorical(probs=pi),
+        component_distribution=torch.distributions.Normal(
+            loc=torch.squeeze(mu),
+            scale=torch.squeeze(sigma)))
+    return gm.mean
 
 def getSamples(pis, sigmas, mus):
     l = len(pis[0])

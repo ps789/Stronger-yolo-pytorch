@@ -1,0 +1,12 @@
+#!/bin/bash
+#SBATCH -J test_file                         # Job name
+#SBATCH -o test_file_%j.out                  # Name of stdout output log file (%j expands to jobID)
+#SBATCH -e test_file_%j.err                  # Name of stderr output log file (%j expands to jobID)
+#SBATCH -N 1                                 # Total number of nodes requested
+#SBATCH -n 1                                 # Total number of cores requested
+#SBATCH --mem=15000                          # Total amount of (real) memory requested (per node)
+#SBATCH -t 48:00:00                          # Time limit (hh:mm:ss)
+#SBATCH --partition=default_gpu              # Request partition for resource allocation
+#SBATCH --gres=gpu:1                         # Specify a list of generic consumable resources (per node)
+cd /yolo/Stronger-yolo-pytorch
+./run_script.sh

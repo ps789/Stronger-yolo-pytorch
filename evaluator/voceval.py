@@ -72,17 +72,13 @@ class EvaluatorVOC(Evaluator):
 
                 for idx in range(len(img_idxs)):
                     _rec_gt = _recs_gt[img_idxs[idx]]
-                    #print("hello")
                     _bbGT = _rec_gt['bbox']
                     _bbPre = bboxs[idx, :]
-                    #print(_bbGT)
-                    #print(_bbPre)
                     ovmax = -np.inf
                     if _bbGT.size > 0:
                         # compute overlaps
                         # intersection
                         ixmin = np.maximum(_bbGT[:, 0], _bbPre[0])
-                        #print(ixmin)
                         iymin = np.maximum(_bbGT[:, 1], _bbPre[1])
                         ixmax = np.minimum(_bbGT[:, 2], _bbPre[2])
                         iymax = np.minimum(_bbGT[:, 3], _bbPre[3])
