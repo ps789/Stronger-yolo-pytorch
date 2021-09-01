@@ -33,14 +33,14 @@ class conv_bn_dropout(nn.Module):
                 ('conv', nn.Conv2d(inp, oup, kernel, stride, padding, bias=False)),
                 ('bn', nn.BatchNorm2d(oup)),
                 ('relu', nn.ReLU6(inplace=True)),
-                ('dropout', nn.Dropout2d(p=0.05))
+                ('dropout', nn.Dropout2d(p=0.15))
             ]))
         elif activate == 'leaky':
             self.convbn = nn.Sequential(OrderedDict([
                 ('conv', nn.Conv2d(inp, oup, kernel, stride, padding, bias=False)),
                 ('bn', nn.BatchNorm2d(oup)),
                 ('relu', nn.LeakyReLU(0.1)),
-                ('dropout', nn.Dropout2d(p=0.05))
+                ('dropout', nn.Dropout2d(p=0.15))
             ]))
         else:
             raise AttributeError("activate type not supported")
@@ -128,21 +128,21 @@ class sepconv_bn_dropout(nn.Module):
                 ('sepconv', nn.Conv2d(inp, inp, kernel, stride, padding, groups=inp, bias=False)),
                 ('sepbn', nn.BatchNorm2d(inp)),
                 ('seprelu', nn.ReLU6(inplace=True)),
-                ('sepdropout', nn.Dropout2d(p=0.05)),
+                ('sepdropout', nn.Dropout2d(p=0.15)),
                 ('pointconv', nn.Conv2d(inp, oup, 1, 1, 0, bias=False)),
                 ('pointbn', nn.BatchNorm2d(oup)),
                 ('pointrelu', nn.ReLU6(inplace=True)),
-                ('pointdropout', nn.Dropout2d(p=0.05))
+                ('pointdropout', nn.Dropout2d(p=0.15))
             ]))
         else:
             self.sepconv_bn_dropout = nn.Sequential(OrderedDict([
                 ('sepconv', nn.Conv2d(inp, inp, kernel, stride, padding, groups=inp, bias=False)),
                 ('sepbn', nn.BatchNorm2d(inp)),
-                ('sepdropout', nn.Dropout2d(p=0.05)),
+                ('sepdropout', nn.Dropout2d(p=0.15)),
                 ('pointconv', nn.Conv2d(inp, oup, 1, 1, 0, bias=False)),
                 ('pointbn', nn.BatchNorm2d(oup)),
                 ('pointrelu', nn.ReLU6(inplace=True)),
-                ('pointdropout', nn.Dropout2d(p=0.05))
+                ('pointdropout', nn.Dropout2d(p=0.15))
             ]))
 
     def forward(self, input):
