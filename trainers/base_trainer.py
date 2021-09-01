@@ -87,8 +87,8 @@ class BaseTrainer:
             state_dict=ckptfile['state_dict']
             new_state_dict= {}
             for k, v in state_dict.items():
-                #name = k
-                name = "module."+k
+                name = k
+                #name = "module."+k
                 new_state_dict[name]=v
             self.model.load_state_dict(new_state_dict)
             if not self.args.finetune and not self.args.do_test and not self.args.Prune.do_test:
