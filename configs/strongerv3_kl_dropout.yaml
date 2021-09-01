@@ -35,7 +35,7 @@ DATASET:
 
 OPTIM:
   batch_size: 5
-  lr_initial: 2e-3
+  lr_initial: 6e-4
   total_epoch: 60
   milestones: [30,45]
 
