@@ -24,7 +24,7 @@ class StrongerV3KL_Dropout_Alternative(nn.Module):
             ('conv6', conv_bias(1024, self.gt_per_grid*(self.numclass+5+4),kernel=1,stride=1,padding=0))
         ]))
         self.mergelarge=nn.Sequential(OrderedDict([
-            ('conv7',conv_bn_dropout(512,256,kernel=1,stride=1,padding=0)),
+            ('conv7',conv_bn(512,256,kernel=1,stride=1,padding=0)),
             ('upsample0',nn.UpsamplingNearest2d(scale_factor=2)),
         ]))
         #-----------------------------------------------
@@ -40,7 +40,7 @@ class StrongerV3KL_Dropout_Alternative(nn.Module):
             ('conv14', conv_bias(512, self.gt_per_grid*(self.numclass+5+4),kernel=1,stride=1,padding=0))
         ]))
         self.mergemid=nn.Sequential(OrderedDict([
-            ('conv15',conv_bn_dropout(256,128,kernel=1,stride=1,padding=0)),
+            ('conv15',conv_bn(256,128,kernel=1,stride=1,padding=0)),
             ('upsample0',nn.UpsamplingNearest2d(scale_factor=2)),
         ]))
         #-----------------------------------------------
