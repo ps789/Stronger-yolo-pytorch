@@ -1,0 +1,45 @@
+MODEL:
+  LABEL: [
+  "aeroplane",
+  "bicycle",
+  "bird",
+  "boat",
+  "bottle",
+  "bus",
+  "car",
+  "cat",
+  "chair",
+  "cow",
+  "diningtable",
+  "dog",
+  "horse",
+  "motorbike",
+  "person",
+  "pottedplant",
+  "sheep",
+  "sofa",
+  "train",
+  "tvmonitor"
+  ]
+  numcls: 20
+  modeltype: StrongerV3_Quantile_Dropout
+  backbone: 'mobilenetv2'
+  backbone_pretrained: 'checkpoints/mobilenet_v2.pth'
+  boxloss: quantile
+  l1scale: 0.1
+  clsfocal: True
+EXPER:
+  experiment_name: 'strongerv3_kl_dropout_alternative'
+DATASET:
+  dataset: 'VOC'
+
+OPTIM:
+  batch_size: 5
+  lr_initial: 2e-4
+  total_epoch: 60
+  milestones: [10,15]
+
+Prune:
+  sparse: False
+
+devices: (0,)

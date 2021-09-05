@@ -23,6 +23,7 @@ from yacscfg2 import _C as cfg2
 from models.strongerv3 import StrongerV3
 from models.strongerv3kl import StrongerV3KL
 from models.strongerv3quantile_adjusted import StrongerV3Quantile_Adjusted
+from models.strongerv3kl_dropout_alternative import StrongerV3KL_Dropout_Alternative
 from torch import optim
 import einops
 import math
@@ -128,7 +129,23 @@ class BaseTrainer:
             backbone,headslarge, detlarge, mergelarge, headsmid, detmid, mergemid, headsmall, detsmall = net.get_info()
             self.model.module.load_partial_state(backbone,headslarge, detlarge, mergelarge, headsmid, detmid, mergemid, headsmall, detsmall)
             self.optimizer.zero_grad()
-
+    def _load_ckpt_quantile_dropout(self, name):
+        cfg2.merge_from_file("configs/strongerv3_kl_dropout_alternative.yaml")
+        net = eval(cfg2.MODEL.modeltype)(cfg=cfg2.MODEL).cuda()
+        if self.args.EXPER.resume == "load_voc":
+            load_tf_weights(self.model, 'vocweights.pkl')
+        else:  # iter or best
+            ckptfile = torch.load(os.path.join('./checkpoints/strongerv3_kl_dropout_alternative/', 'checkpoint-{}.pth'.format(name)))
+            state_dict=ckptfile['state_dict']
+            new_state_dict= {}
+            for k, v in state_dict.items():
+                #name=k #remove 'module.' of DataParallel
+                name = k[7:]
+                new_state_dict[name]=v
+            net.load_state_dict(new_state_dict)
+            backbone,headslarge, detlarge, mergelarge, headsmid, detmid, mergemid, headsmall, detsmall = net.get_info()
+            self.model.module.load_partial_state(backbone,headslarge, detlarge, mergelarge, headsmid, detmid, mergemid, headsmall, detsmall)
+            self.optimizer.zero_grad()
     def _load_ckpt_cdf(self, name):
         cfg2.merge_from_file("configs/strongerv3_kl.yaml")
         net = eval(cfg2.MODEL.modeltype)(cfg=cfg2.MODEL).cuda()
@@ -154,6 +171,8 @@ class BaseTrainer:
             self._load_ckpt()
         elif self.args.EXPER.experiment_name == 'strongerv3_quantile_adjusted':
             self._load_ckpt_quantile_adjusted("best")
+        elif self.args.EXPER.experiment_name == 'strongerv3_quantile_dropout':
+            self._load_ckpt_quantile_dropout("lowerlr")
         elif self.args.EXPER.experiment_name == 'strongerv3_cdf':
             self._load_ckpt_cdf("best")
 
@@ -235,7 +254,7 @@ class BaseTrainer:
                 print(self.global_iter)
                 for k, v in self.logger_losses.items():
                     print(k, ":", v.get_avg())
-            if self.args.EXPER.experiment_name == 'strongerv3_quantile_adjusted':
+            if self.args.EXPER.experiment_name == 'strongerv3_quantile_adjusted' or self.args.EXPER.experiment_name == 'strongerv3_quantile_dropout':
                 self.train_step_quantile_adjusted(img, labels)
             elif self.args.EXPER.experiment_name == 'strongerv3_cdf':
                 self.train_step_cdf(img, labels)
@@ -726,7 +745,7 @@ class BaseTrainer:
             imgs = imgs.cuda()
             ori_shapes = ori_shapes.cuda()
             with torch.no_grad():
-                if self.args.EXPER.experiment_name == "strongerv3_quantile" or self.args.EXPER.experiment_name == "strongerv3_quantile_adjusted":
+                if self.args.EXPER.experiment_name == "strongerv3_quantile" or self.args.EXPER.experiment_name == "strongerv3_quantile_adjusted" or self.args.EXPER.experiment_name == 'strongerv3_quantile_dropout':
                      alpha = torch.full([self.args.OPTIM.batch_size, 4], fill_value = 0.5)
                      outputs = self.model(imgs, alpha)
                      convlarge, convmid, convsmall = self.model.module.partial_forward(imgs)
