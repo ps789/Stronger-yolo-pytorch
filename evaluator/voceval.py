@@ -59,6 +59,8 @@ class EvaluatorVOC(Evaluator):
                 # build recgt according to appeard imgs
                 _recs_gt = defaultdict(dict)
                 for imgidx in set(img_idxs):
+                    print("hi")
+                    print(imgidx)
                     _rec = [rec for rec in self.rec_gt[imgidx[19:]] if rec['label'] == self.cateNames.index(cls)]
                     _box = np.array([rec['bbox'] for rec in _rec])
                     _dif = np.array([rec['difficult'] for rec in _rec]).astype(np.bool)
