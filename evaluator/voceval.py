@@ -59,7 +59,7 @@ class EvaluatorVOC(Evaluator):
                 # build recgt according to appeard imgs
                 _recs_gt = defaultdict(dict)
                 for imgidx in set(img_idxs):
-                    _rec = [rec for rec in self.rec_gt[imgidx[19:]] if rec['label'] == self.cateNames.index(cls)]
+                    _rec = [rec for rec in self.rec_gt[imgidx] if rec['label'] == self.cateNames.index(cls)]
                     _box = np.array([rec['bbox'] for rec in _rec])
                     _dif = np.array([rec['difficult'] for rec in _rec]).astype(np.bool)
                     _detected = [False] * len(_rec)
@@ -95,7 +95,6 @@ class EvaluatorVOC(Evaluator):
                         jmax = np.argmax(overlaps)
                         #print(jmax)
                     # TODO add flexible threshold
-                        print(ovmaxs)
                     if ovmax > self.iou_thres:
                         if not _rec_gt['difficult'][jmax]:
                             if not _rec_gt['detected'][jmax]:
