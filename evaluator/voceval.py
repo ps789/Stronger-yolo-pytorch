@@ -95,7 +95,7 @@ class EvaluatorVOC(Evaluator):
                         jmax = np.argmax(overlaps)
                         #print(jmax)
                     # TODO add flexible threshold
-                    print(ovmaxs)
+                    print(ovmax)
                     if ovmax > self.iou_thres:
                         if not _rec_gt['difficult'][jmax]:
                             if not _rec_gt['detected'][jmax]:
