@@ -120,12 +120,13 @@ class EvaluatorVOC(Evaluator):
         filepath = os.path.join(self.dataset_root, 'VOC2007', 'ImageSets', 'Main', 'test.txt')
         with open(filepath, 'r') as f:
             filelist = f.readlines()
-        print("nya")
         print(len(filelist))
         filelist = [file.strip() for file in filelist]
         for file in filelist:
             _, boxGT, labelGT, difficult = PascalVocXmlParser(self._annopath.format(file), self.cateNames).parse(
                 filterdiff=False)
+            print("boxgt")
+            print(boxGT)
             for box, label, difficult in zip(boxGT, labelGT, difficult):
                 self.rec_gt[file].append({
                     'label': label,
