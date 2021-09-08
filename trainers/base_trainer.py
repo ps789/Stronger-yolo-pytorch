@@ -135,7 +135,14 @@ class BaseTrainer:
         if self.args.EXPER.resume == "load_voc":
             load_tf_weights(self.model, 'vocweights.pkl')
         else:  # iter or best
-            ckptfile = torch.load(os.path.join('./checkpoints/strongerv3_kl_dropout_alternative/', 'checkpoint-{}.pth'.format(name)))
+            if self.experiment_name == "strongerv3_quantile_dropout_2":
+                ckptfile = torch.load(os.path.join('./checkpoints/strongerv3_kl_dropout_alternative_2/', 'checkpoint-{}.pth'.format(name)))
+            elif self.experiment_name == "strongerv3_quantile_dropout_3":
+                ckptfile = torch.load(os.path.join('./checkpoints/strongerv3_kl_dropout_alternative_3/', 'checkpoint-{}.pth'.format(name)))
+            elif self.experiment_name == "strongerv3_quantile_dropout_4":
+                ckptfile = torch.load(os.path.join('./checkpoints/strongerv3_kl_dropout_alternative_4/', 'checkpoint-{}.pth'.format(name)))
+            else:
+                ckptfile = torch.load(os.path.join('./checkpoints/strongerv3_kl_dropout_alternative/', 'checkpoint-{}.pth'.format(name)))
             state_dict=ckptfile['state_dict']
             new_state_dict= {}
             for k, v in state_dict.items():

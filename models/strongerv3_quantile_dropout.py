@@ -155,7 +155,7 @@ class StrongerV3_Quantile_Dropout(nn.Module):
         output=output.view(bz,-1,5+self.numclass+4)
         return output
     def forward(self,input, input_alpha):
-        for field in [self.backbone,self.headslarge, self.detlarge, self.mergelarge, self.headsmid, self.detmid, self.mergemid, self.headsmall, self.detsmall]:
+        for field in [self.backbone,self.headslarge, self.mergelarge, self.headsmid, self.mergemid, self.headsmall]:
             field.eval()
         feat_small, feat_mid, feat_large = self.backbone(input)
         conv = self.headslarge(feat_large)
