@@ -29,7 +29,7 @@ MODEL:
   l1scale: 0.1
   clsfocal: True
 EXPER:
-  experiment_name: 'strongerv3_kl_dropout_alternative'
+  experiment_name: 'strongerv3_quantile_dropout'
 DATASET:
   dataset: 'VOC'
 
