@@ -643,7 +643,7 @@ class BaseTrainer:
                       outputs = model.partial_forward_2(convlarge, convmid, convsmall, outlarge_orig, outmid_orig, outsmall_orig, alpha)
                       bbox_array.append(outputs)
                   bbox_final = torch.stack(bbox_array, dim = 3)
-                  bbox_final_array.append(bbox_final)
+              bbox_final_array.append(bbox_final)
           bbox_final = torch.stack(bbox_final_array, dim = 4).mean(dim = 4)
           for imgidx in range(len(outputs)):
               postprocessed_array = []
