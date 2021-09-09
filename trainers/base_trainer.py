@@ -24,6 +24,7 @@ from models.strongerv3 import StrongerV3
 from models.strongerv3kl import StrongerV3KL
 from models.strongerv3quantile_adjusted import StrongerV3Quantile_Adjusted
 from models.strongerv3kl_dropout_alternative import StrongerV3KL_Dropout_Alternative
+from models.strongerv3kl_dropout_alternative import StrongerV3_Quantile_Dropout
 from torch import optim
 import einops
 import math
