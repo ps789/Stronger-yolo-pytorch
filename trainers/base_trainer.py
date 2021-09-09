@@ -622,6 +622,9 @@ class BaseTrainer:
           ori_shapes = ori_shapes.cuda()
           bbox_final_array = []
           for model in modellist:
+              outlarge_array = []
+              outmid_array = []
+              outsmall_array = []
               with torch.no_grad():
                   convlarge, convmid, convsmall = model.partial_forward(imgs)
               for i in range(num_samples):
@@ -713,6 +716,9 @@ class BaseTrainer:
           ori_shapes = ori_shapes.cuda()
           output_array = []
           for model in modellist:
+              outlarge_array = []
+              outmid_array = []
+              outsmall_array = []
               with torch.no_grad():
                   convlarge, convmid, convsmall = model.partial_forward(imgs)
               for i in range(num_samples):
