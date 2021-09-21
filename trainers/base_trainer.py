@@ -545,7 +545,6 @@ class BaseTrainer:
           outsmall_orig = torch.stack(outsmall_array, dim = 4).mean(dim = 4)
           bbox_array = [torch.cat([self.model.module.decode_infer(outsmall_orig, 8), self.model.module.decode_infer(outmid_orig, 16), self.model.module.decode_infer(outlarge_orig, 32)], dim = 1)]
           for i in range(num_samples):
-              #alpha = torch.cat([torch.full([self.args.OPTIM.batch_size, 2], fill_value = 0.1+0.8*i/(num_samples-1)), torch.full([self.args.OPTIM.batch_size, 2], fill_value = 0.9-0.8*i/(num_samples-1))], dim = 1)
               alpha =  torch.rand([self.args.OPTIM.batch_size, 4])##torch.rand([self.args.OPTIM.batch_size, 4])
               with torch.no_grad():
                   outputs = self.model.module.partial_forward_2(convlarge, convmid, convsmall, outlarge_orig, outmid_orig, outsmall_orig, alpha)
@@ -1008,7 +1007,7 @@ class BaseTrainer:
 
         evaluation_method = "crps"
         if evaluation_method == "crps":
-            return self.sample_gaussian_ensemble(9, validiter=-1)
+            return self.sample_quantile_variational(20, validiter=-1)
         s = time.time()
         self.model.eval()
         for idx_batch, inputs in tqdm(enumerate(self.test_dataloader),total=len(self.test_dataloader)):
