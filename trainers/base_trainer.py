@@ -865,7 +865,6 @@ class BaseTrainer:
             imgs = imgs.cuda()
             ori_shapes = ori_shapes.cuda()
             with torch.no_grad():
-                #outputs = self.model(imgs)
                 convlarge, convmid, convsmall = self.model.module.partial_forward(imgs)
                 outlarge_orig, outmid_orig, outsmall_orig = self.model.module.partial_forward_orig(convlarge, convmid, convsmall)
                 outlarge_array = []
@@ -880,22 +879,31 @@ class BaseTrainer:
                         outlarge_array.append(outlarge_orig)
                         outmid_array.append(outmid_orig)
                         outsmall_array.append(outsmall_orig)
-                outlarge_orig = torch.stack(outlarge_array, dim = 4).mean(dim = 4)
-                outmid_orig = torch.stack(outmid_array, dim = 4).mean(dim = 4)
-                outsmall_orig = torch.stack(outsmall_array, dim = 4).mean(dim = 4)
-                outputs = torch.cat([self.model.module.decode_infer(outsmall_orig, 8), self.model.module.decode_infer(outmid_orig, 16), self.model.module.decode_infer(outlarge_orig, 32)], dim = 1)
+                # outlarge_orig = torch.stack(outlarge_array, dim = 4).mean(dim = 4)
+                # outmid_orig = torch.stack(outmid_array, dim = 4).mean(dim = 4)
+                # outsmall_orig = torch.stack(outsmall_array, dim = 4).mean(dim = 4)
+                # outputs = torch.cat([self.model.module.decode_infer(outsmall_orig, 8), self.model.module.decode_infer(outmid_orig, 16), self.model.module.decode_infer(outlarge_orig, 32)], dim = 1)
                 #outputs = self.model(imgs, alpha)
                 #print(outputs)
             for imgidx in range(len(outputs)):
-                bbox,bboxvari = _postprocess(outputs[imgidx], imgs.shape[-1], ori_shapes[imgidx])
-                #print(bboxvari)
-                #bbox2 = einops.repeat(bbox, 'm n -> m n k', k=(num_samples*19+1))
-                bbox = einops.repeat(bbox, 'm n -> m n k', k=(num_samples+1))
 
-                #bbox[:, 0:4, 1:] = torch.sort(torch.normal(bbox2[:, 0:4, :], einops.repeat(torch.sqrt(bboxvari), 'm n -> m n k', k=num_samples*19+1)), dim = -1, descending = False)[0][:, :, ::20]
-                bbox[:, 0:4, 1:] = torch.normal(bbox[:, 0:4, 1:], einops.repeat(torch.sqrt(bboxvari), 'm n -> m n k', k=num_samples))
+                bbox_array = []
+                for i in range(10):
+                    outputs = torch.cat([self.model.module.decode_infer(outsmall_array[i], 8), self.model.module.decode_infer(outmid_array[i], 16), self.model.module.decode_infer(outlarge_array[i], 32)], dim = 1)
+                    bbox,bboxvari = _postprocess(outputs[imgidx], imgs.shape[-1], ori_shapes[imgidx])
+                    bbox = einops.repeat(bbox, 'm n -> m n k', k=(num_samples))
+
+                    bbox[:, 0:4, :] = torch.normal(bbox[:, 0:4, :], einops.repeat(torch.sqrt(bboxvari), 'm n -> m n k', k=num_samples))
+                    bbox_array.append(bbox)
+                bbox = torch.cat(bbox_array, dim = 2)
+                model.eval()
+                with torch.no_grad():
+                    outlarge_orig, outmid_orig, outsmall_orig = self.model.module.partial_forward_orig(convlarge, convmid, convsmall)
+                outputs = torch.cat([self.model.module.decode_infer(outsmall_orig, 8), self.model.module.decode_infer(outmid_orig, 16), self.model.module.decode_infer(outlarge_orig, 32)], dim = 1)
+                bbox_orig,bboxvari = _postprocess(outputs[imgidx], imgs.shape[-1], ori_shapes[imgidx])
+                bbox = torch.cat((bbox_orig.unsqueeze(2), bbox), dim = 2)
                 nms_boxes, nms_scores, nms_labels = torch_nms_sampling(self.args.EVAL,bbox,
-                                                                 variance=bboxvari)
+                                                                     variance=bboxvari)
                 if nms_boxes is not None:
                     self.TESTevaluator.append(imgpath[imgidx][0],
                                               nms_boxes.cpu().numpy(),
