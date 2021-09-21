@@ -488,6 +488,85 @@ class BaseTrainer:
       for k, v in zip(self.logger_custom, results):
           print("{}:{}".format(k, v))
       return results, imgs
+    def sample_pure_variational(self, num_samples,validiter=-1):
+      def _postprocess(pred_bbox, test_input_size, org_img_shape):
+          if self.args.MODEL.boxloss == 'KL' or self.args.MODEL.boxloss == 'quantile':
+              pred_coor = pred_bbox[:, 0:4]
+              pred_vari = pred_bbox[:, 4:8]
+              pred_vari = torch.exp(pred_vari)
+              pred_conf = pred_bbox[:, 8]
+              pred_prob = pred_bbox[:, 9:]
+          else:
+              pred_coor = pred_bbox[:, 0:4]
+              pred_conf = pred_bbox[:, 4]
+              pred_prob = pred_bbox[:, 5:]
+          org_h, org_w = org_img_shape
+          resize_ratio = min(1.0 * test_input_size / org_w, 1.0 * test_input_size / org_h)
+          dw = (test_input_size - resize_ratio * org_w) / 2
+          dh = (test_input_size - resize_ratio * org_h) / 2
+          pred_coor[:, 0::2] = 1.0 * (pred_coor[:, 0::2] - dw) / resize_ratio
+          pred_coor[:, 1::2] = 1.0 * (pred_coor[:, 1::2] - dh) / resize_ratio
+          x1,y1,x2,y2=torch.split(pred_coor,[1,1,1,1],dim=1)
+          x1,y1=torch.max(x1,torch.zeros_like(x1)),torch.max(y1,torch.zeros_like(y1))
+          x2,y2=torch.min(x2,torch.ones_like(x2)*(org_w-1)),torch.min(y2,torch.ones_like(y2)*(org_h-1))
+          pred_coor=torch.cat([x1,y1,x2,y2],dim=-1)
+          # ***********************
+          if pred_prob.shape[-1]==0:
+              pred_prob = torch.ones((pred_prob.shape[0], 1)).cuda()
+          # ***********************
+          scores = pred_conf.unsqueeze(-1) * pred_prob
+          bboxes = torch.cat([pred_coor, scores], dim=-1)
+          return bboxes,pred_vari
+      s = time.time()
+      self.model.train()
+      #return self.sample_quantile_load(10)
+      for idx_batch, inputs in tqdm(enumerate(self.test_dataloader),total=len(self.test_dataloader)):
+      #for idx_batch, inputs in tqdm(enumerate(self.test_dataloader),total=len(self.test_dataloader)):
+          if idx_batch == validiter:  # to save time
+              break
+          inputs = [input if isinstance(input, list) else input.squeeze(0) for input in inputs]
+          (imgs, imgpath, ori_shapes, *_) = inputs
+          imgs = imgs.cuda()
+          ori_shapes = ori_shapes.cuda()
+          outlarge_array = []
+          outmid_array = []
+          outsmall_array = []
+
+          self.model.eval()
+          with torch.no_grad():
+              convlarge, convmid, convsmall = self.model.module.partial_forward(imgs)
+              outlarge_orig, outmid_orig, outsmall_orig = self.model.module.partial_forward_orig(convlarge, convmid, convsmall)
+          bbox_array = [torch.cat([self.model.module.decode_infer(outsmall_orig, 8), self.model.module.decode_infer(outmid_orig, 16), self.model.module.decode_infer(outlarge_orig, 32)], dim = 1)]
+          self.model.train()
+          for i in range(200):
+              with torch.no_grad():
+                  outlarge_orig, outmid_orig, outsmall_orig = self.model.module.partial_forward_orig(convlarge, convmid, convsmall)
+                  outputs = self.model.module.partial_forward_2(convlarge, convmid, convsmall, outlarge_orig, outmid_orig, outsmall_orig, alpha)
+                  bbox_array.append(outputs)
+          bbox_final = torch.stack(bbox_array, dim = 3)
+          for imgidx in range(len(outputs)):
+              postprocessed_array = []
+              for i in range(bbox_final.size()[3]):
+                  bbox, bboxvari = _postprocess(bbox_final[imgidx, :, :, i], imgs.shape[-1], ori_shapes[imgidx])
+                  postprocessed_array.append(bbox)
+              bbox = torch.stack(postprocessed_array, dim = 2)
+              nms_boxes, nms_scores, nms_labels = torch_nms_sampling(self.args.EVAL,bbox,
+                                                               variance=bboxvari)
+              if nms_boxes is not None:
+                  self.TESTevaluator.append(imgpath[imgidx][0],
+                                            nms_boxes.cpu().numpy(),
+                                            nms_scores.cpu().numpy(),
+                                            nms_labels.cpu().numpy(),
+                                            bboxvari.cpu().numpy())
+
+      self.TESTevaluator.save_dict()
+      self.TESTevaluator.load_dict()
+      self.TESTevaluator.get_distribution_samples()
+      results = self.TESTevaluator.evaluate()
+      imgs = self.TESTevaluator.visual_imgs
+      for k, v in zip(self.logger_custom, results):
+          print("{}:{}".format(k, v))
+      return results, imgs
     def sample_quantile_variational(self, num_samples,validiter=-1):
       def _postprocess(pred_bbox, test_input_size, org_img_shape):
           if self.args.MODEL.boxloss == 'KL' or self.args.MODEL.boxloss == 'quantile':
@@ -1018,7 +1097,7 @@ class BaseTrainer:
 
         evaluation_method = "crps"
         if evaluation_method == "crps":
-            return self.sample_gaussian_variational(20, validiter=-1)
+            return self.sample_pure_variational(20, validiter=-1)
         s = time.time()
         self.model.eval()
         for idx_batch, inputs in tqdm(enumerate(self.test_dataloader),total=len(self.test_dataloader)):
