@@ -534,7 +534,7 @@ class BaseTrainer:
 
           with torch.no_grad():
               convlarge, convmid, convsmall = self.model.module.partial_forward(imgs)
-          for i in range(num_samples):
+          for i in range(10):
               with torch.no_grad():
                   outlarge_orig, outmid_orig, outsmall_orig = self.model.module.partial_forward_orig(convlarge, convmid, convsmall)
                   outlarge_array.append(outlarge_orig)
@@ -703,7 +703,7 @@ class BaseTrainer:
       #model4 = self._load_ckpt_name("dropout4")
       modellist = [self.model.module, model2, model3]
       for model in modellist:
-          model.train()
+          model.eval()
       #model4.eval()
       #return self.sample_quantile_load(10)
       for idx_batch, inputs in tqdm(enumerate(self.test_dataloader),total=len(self.test_dataloader)):
@@ -871,7 +871,7 @@ class BaseTrainer:
 
                 with torch.no_grad():
                     convlarge, convmid, convsmall = self.model.module.partial_forward(imgs)
-                for i in range(num_samples):
+                for i in range(10):
                     with torch.no_grad():
                         outlarge_orig, outmid_orig, outsmall_orig = self.model.module.partial_forward_orig(convlarge, convmid, convsmall)
                         outlarge_array.append(outlarge_orig)
@@ -1008,7 +1008,7 @@ class BaseTrainer:
 
         evaluation_method = "crps"
         if evaluation_method == "crps":
-            return self.sample_quantile_variational(9, validiter=-1)
+            return self.sample_gaussian_ensemble(9, validiter=-1)
         s = time.time()
         self.model.eval()
         for idx_batch, inputs in tqdm(enumerate(self.test_dataloader),total=len(self.test_dataloader)):

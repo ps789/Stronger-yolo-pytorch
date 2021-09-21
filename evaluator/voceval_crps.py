@@ -64,7 +64,7 @@ class EvaluatorVOC_CRPS(Evaluator):
                 # build recgt according to appeard imgs
                 _recs_gt = defaultdict(dict)
                 for imgidx in set(img_idxs):
-                    _rec = [rec for rec in self.rec_gt[imgidx[19:]] if rec['label'] == self.cateNames.index(cls)]
+                    _rec = [rec for rec in self.rec_gt[imgidx] if rec['label'] == self.cateNames.index(cls)]
                     _box = np.array([rec['bbox'] for rec in _rec])
                     _dif = np.array([rec['difficult'] for rec in _rec]).astype(np.bool)
                     _recs_gt[imgidx]['bbox'] = _box
