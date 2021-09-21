@@ -556,7 +556,7 @@ class BaseTrainer:
           bbox_final = torch.stack(bbox_array, dim = 3)
           for imgidx in range(len(outputs)):
               postprocessed_array = []
-              for i in range(bbox_final.size()[3]+1):
+              for i in range(bbox_final.size()[3]):
                   bbox, bboxvari = _postprocess(bbox_final[imgidx, :, :, i], imgs.shape[-1], ori_shapes[imgidx])
                   postprocessed_array.append(bbox)
               bbox = torch.stack(postprocessed_array, dim = 2)
