@@ -882,15 +882,14 @@ class BaseTrainer:
                 self.model.eval()
                 with torch.no_grad():
                     outlarge_orig, outmid_orig, outsmall_orig = self.model.module.partial_forward_orig(convlarge, convmid, convsmall)
-                outputs = torch.cat([self.model.module.decode_infer(outsmall_orig, 8), self.model.module.decode_infer(outmid_orig, 16), self.model.module.decode_infer(outlarge_orig, 32)], dim = 1)
-                bbox_orig,bboxvari = _postprocess(outputs[imgidx], imgs.shape[-1], ori_shapes[imgidx])
+                outputs_orig = torch.cat([self.model.module.decode_infer(outsmall_orig, 8), self.model.module.decode_infer(outmid_orig, 16), self.model.module.decode_infer(outlarge_orig, 32)], dim = 1)
                 # outlarge_orig = torch.stack(outlarge_array, dim = 4).mean(dim = 4)
                 # outmid_orig = torch.stack(outmid_array, dim = 4).mean(dim = 4)
                 # outsmall_orig = torch.stack(outsmall_array, dim = 4).mean(dim = 4)
                 # outputs = torch.cat([self.model.module.decode_infer(outsmall_orig, 8), self.model.module.decode_infer(outmid_orig, 16), self.model.module.decode_infer(outlarge_orig, 32)], dim = 1)
                 #outputs = self.model(imgs, alpha)
                 #print(outputs)
-            for imgidx in range(len(outputs)):
+            for imgidx in range(len(outputs_orig)):
                 bbox_array = []
                 for i in range(10):
                     outputs = torch.cat([self.model.module.decode_infer(outsmall_array[i], 8), self.model.module.decode_infer(outmid_array[i], 16), self.model.module.decode_infer(outlarge_array[i], 32)], dim = 1)
@@ -900,6 +899,7 @@ class BaseTrainer:
                     bbox[:, 0:4, :] = torch.normal(bbox[:, 0:4, :], einops.repeat(torch.sqrt(bboxvari), 'm n -> m n k', k=num_samples))
                     bbox_array.append(bbox)
                 bbox = torch.cat(bbox_array, dim = 2)
+                bbox_orig,bboxvari = _postprocess(outputs_orig[imgidx], imgs.shape[-1], ori_shapes[imgidx])
                 bbox = torch.cat((bbox_orig.unsqueeze(2), bbox), dim = 2)
                 nms_boxes, nms_scores, nms_labels = torch_nms_sampling(self.args.EVAL,bbox,
                                                                      variance=bboxvari)
