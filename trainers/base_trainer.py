@@ -541,7 +541,7 @@ class BaseTrainer:
           for i in range(200):
               with torch.no_grad():
                   outlarge_orig, outmid_orig, outsmall_orig = self.model.module.partial_forward_orig(convlarge, convmid, convsmall)
-                  outputs = self.model.module.partial_forward_2(convlarge, convmid, convsmall, outlarge_orig, outmid_orig, outsmall_orig, alpha)
+                  outputs = torch.cat([self.model.module.decode_infer(outsmall_orig, 8), self.model.module.decode_infer(outmid_orig, 16), self.model.module.decode_infer(outlarge_orig, 32)], dim = 1)
                   bbox_array.append(outputs)
           bbox_final = torch.stack(bbox_array, dim = 3)
           for imgidx in range(len(outputs)):
