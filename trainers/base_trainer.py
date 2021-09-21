@@ -1011,7 +1011,7 @@ class BaseTrainer:
 
         evaluation_method = "crps"
         if evaluation_method == "crps":
-            return self.sample_quantile_variational(20, validiter=-1)
+            return self.sample_gaussian_variational(20, validiter=-1)
         s = time.time()
         self.model.eval()
         for idx_batch, inputs in tqdm(enumerate(self.test_dataloader),total=len(self.test_dataloader)):
