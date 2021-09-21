@@ -532,27 +532,31 @@ class BaseTrainer:
           outmid_array = []
           outsmall_array = []
 
+          self.model.eval()
           with torch.no_grad():
               convlarge, convmid, convsmall = self.model.module.partial_forward(imgs)
+              outlarge_orig, outmid_orig, outsmall_orig = self.model.module.partial_forward_orig(convlarge, convmid, convsmall)
+          bbox_array = [torch.cat([self.model.module.decode_infer(outsmall_orig, 8), self.model.module.decode_infer(outmid_orig, 16), self.model.module.decode_infer(outlarge_orig, 32)], dim = 1)]
+          self.model.train()
           for i in range(10):
               with torch.no_grad():
                   outlarge_orig, outmid_orig, outsmall_orig = self.model.module.partial_forward_orig(convlarge, convmid, convsmall)
-                  outlarge_array.append(outlarge_orig)
-                  outmid_array.append(outmid_orig)
-                  outsmall_array.append(outsmall_orig)
-          outlarge_orig = torch.stack(outlarge_array, dim = 4).mean(dim = 4)
-          outmid_orig = torch.stack(outmid_array, dim = 4).mean(dim = 4)
-          outsmall_orig = torch.stack(outsmall_array, dim = 4).mean(dim = 4)
-          bbox_array = [torch.cat([self.model.module.decode_infer(outsmall_orig, 8), self.model.module.decode_infer(outmid_orig, 16), self.model.module.decode_infer(outlarge_orig, 32)], dim = 1)]
-          for i in range(num_samples):
-              alpha =  torch.rand([self.args.OPTIM.batch_size, 4])##torch.rand([self.args.OPTIM.batch_size, 4])
-              with torch.no_grad():
-                  outputs = self.model.module.partial_forward_2(convlarge, convmid, convsmall, outlarge_orig, outmid_orig, outsmall_orig, alpha)
-                  bbox_array.append(outputs)
+          #         outlarge_array.append(outlarge_orig)
+          #         outmid_array.append(outmid_orig)
+          #         outsmall_array.append(outsmall_orig)
+          # outlarge_orig = torch.stack(outlarge_array, dim = 4).mean(dim = 4)
+          # outmid_orig = torch.stack(outmid_array, dim = 4).mean(dim = 4)
+          # outsmall_orig = torch.stack(outsmall_array, dim = 4).mean(dim = 4)
+          #bbox_array = [torch.cat([self.model.module.decode_infer(outsmall_orig, 8), self.model.module.decode_infer(outmid_orig, 16), self.model.module.decode_infer(outlarge_orig, 32)], dim = 1)]
+              for i in range(num_samples):
+                  alpha =  torch.rand([self.args.OPTIM.batch_size, 4])##torch.rand([self.args.OPTIM.batch_size, 4])
+                  with torch.no_grad():
+                      outputs = self.model.module.partial_forward_2(convlarge, convmid, convsmall, outlarge_orig, outmid_orig, outsmall_orig, alpha)
+                      bbox_array.append(outputs)
           bbox_final = torch.stack(bbox_array, dim = 3)
           for imgidx in range(len(outputs)):
               postprocessed_array = []
-              for i in range(num_samples+1):
+              for i in range(bbox_final.size()[3]+1):
                   bbox, bboxvari = _postprocess(bbox_final[imgidx, :, :, i], imgs.shape[-1], ori_shapes[imgidx])
                   postprocessed_array.append(bbox)
               bbox = torch.stack(postprocessed_array, dim = 2)
