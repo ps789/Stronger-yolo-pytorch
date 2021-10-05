@@ -137,13 +137,13 @@ class BaseTrainer:
             load_tf_weights(self.model, 'vocweights.pkl')
         else:  # iter or best
             if self.experiment_name == "strongerv3_quantile_dropout2":
-                ckptfile = torch.load(os.path.join('./checkpoints/gaussian_ensemble_2/', 'checkpoint-{}.pth'.format(name)))
+                ckptfile = torch.load(os.path.join('./checkpoints/gaussian_ensemble2/', 'checkpoint-{}.pth'.format(name)))
             elif self.experiment_name == "strongerv3_quantile_dropout3":
-                ckptfile = torch.load(os.path.join('./checkpoints/gaussian_ensemble_3/', 'checkpoint-{}.pth'.format(name)))
+                ckptfile = torch.load(os.path.join('./checkpoints/gaussian_ensemble3/', 'checkpoint-{}.pth'.format(name)))
             elif self.experiment_name == "strongerv3_quantile_dropout4":
-                ckptfile = torch.load(os.path.join('./checkpoints/gaussian_ensemble_4/', 'checkpoint-{}.pth'.format(name)))
+                ckptfile = torch.load(os.path.join('./checkpoints/gaussian_ensemble4/', 'checkpoint-{}.pth'.format(name)))
             else:
-                ckptfile = torch.load(os.path.join('./checkpoints/gaussian_ensemble_5/', 'checkpoint-{}.pth'.format(name)))
+                ckptfile = torch.load(os.path.join('./checkpoints/gaussian_ensemble1/', 'checkpoint-{}.pth'.format(name)))
             state_dict=ckptfile['state_dict']
             new_state_dict= {}
             for k, v in state_dict.items():
