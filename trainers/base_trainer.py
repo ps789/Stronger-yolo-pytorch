@@ -262,7 +262,7 @@ class BaseTrainer:
                 print(self.global_iter)
                 for k, v in self.logger_losses.items():
                     print(k, ":", v.get_avg())
-            if self.args.EXPER.experiment_name == 'strongerv3_quantile_adjusted' or self.args.EXPER.experiment_name == 'strongerv3_quantile_dropout' or self.args.EXPER.experiment_name == 'strongerv3_quantile_dropout_2' or self.args.EXPER.experiment_name == 'strongerv3_quantile_dropout_3' or self.args.EXPER.experiment_name == 'strongerv3_quantile_dropout_4':
+            if self.args.EXPER.experiment_name == 'strongerv3_quantile_adjusted' or self.args.EXPER.experiment_name == 'strongerv3_quantile_dropout' or self.args.EXPER.experiment_name == 'strongerv3_quantile_dropout2' or self.args.EXPER.experiment_name == 'strongerv3_quantile_dropout3' or self.args.EXPER.experiment_name == 'strongerv3_quantile_dropout4':
                 self.train_step_quantile_adjusted(img, labels)
             elif self.args.EXPER.experiment_name == 'strongerv3_cdf':
                 self.train_step_cdf(img, labels)
