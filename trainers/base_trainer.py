@@ -1108,7 +1108,7 @@ class BaseTrainer:
             imgs = imgs.cuda()
             ori_shapes = ori_shapes.cuda()
             with torch.no_grad():
-                if self.args.EXPER.experiment_name == "strongerv3_quantile" or self.args.EXPER.experiment_name == "strongerv3_quantile_adjusted" or self.args.EXPER.experiment_name == 'strongerv3_quantile_dropout' or self.args.EXPER.experiment_name == 'strongerv3_quantile_dropout_2' or self.args.EXPER.experiment_name == 'strongerv3_quantile_dropout_3' or self.args.EXPER.experiment_name == 'strongerv3_quantile_dropout_4':
+                if self.args.EXPER.experiment_name == "strongerv3_quantile" or self.args.EXPER.experiment_name == "strongerv3_quantile_adjusted" or self.args.EXPER.experiment_name == 'strongerv3_quantile_dropout' or self.args.EXPER.experiment_name == 'strongerv3_quantile_dropout2' or self.args.EXPER.experiment_name == 'strongerv3_quantile_dropout3' or self.args.EXPER.experiment_name == 'strongerv3_quantile_dropout4':
                      alpha = torch.full([self.args.OPTIM.batch_size, 4], fill_value = 0.5)
                      outputs = self.model(imgs, alpha)
                      convlarge, convmid, convsmall = self.model.module.partial_forward(imgs)
